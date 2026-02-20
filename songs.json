@@ -1,0 +1,46 @@
+[
+  {
+    "id": "song01",
+    "title": "Test Flight"
+  },
+  {
+    "id": "song02_N",
+    "title": "Auto Mania（Lv6）",
+    "audio": "song02.wav"
+  },
+  {
+    "id": "song02_H",
+    "title": "Auto Mania（Lv8）",
+    "audio": "song02.wav"
+  },
+  {
+    "id": "song02_A",
+    "title": "Auto Mania（Lv10）",
+    "audio": "song02.wav"
+  },
+  {
+    "id": "song03_N",
+    "title": "玄奏（Lv5）",
+    "audio": "song03.wav"
+  },
+  {
+    "id": "song03_H",
+    "title": "玄奏（Lv10）",
+    "audio": "song03.wav"
+  },
+  {
+    "id": "song03_A",
+    "title": "玄奏（Lv12）",
+    "audio": "song03.wav"
+  },
+  {
+    "id": "song04_H",
+    "title": "プリズム（Lv8）",
+    "audio": "song04.wav"
+  },
+  {
+    "id": "song04_A",
+    "title": "プリズム（Lv10）",
+    "audio": "song04.wav"
+  }
+]

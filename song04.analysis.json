@@ -1,0 +1,112 @@
+{
+  "title": "青の行方",
+  "artist": "Analyzed",
+  "audio": "Japanese female vocal..wav",
+  "bpm": 142,
+  "offsetSec": 0.01,
+  "timeSignature": [
+    4,
+    4
+  ],
+  "bars": 52,
+  "normalNotesTarget": 500,
+  "seed": 142000,
+  "sections": [
+    {
+      "fromBar": 0,
+      "toBar": 3,
+      "kind": "verse",
+      "kick": "Light"
+    },
+    {
+      "fromBar": 4,
+      "toBar": 7,
+      "kind": "verse",
+      "kick": "Light"
+    },
+    {
+      "fromBar": 8,
+      "toBar": 11,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 12,
+      "toBar": 15,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 16,
+      "toBar": 19,
+      "kind": "verse",
+      "kick": "Light"
+    },
+    {
+      "fromBar": 20,
+      "toBar": 20,
+      "kind": "breakdown",
+      "kick": "Light"
+    },
+    {
+      "fromBar": 21,
+      "toBar": 24,
+      "kind": "verse",
+      "kick": "Light"
+    },
+    {
+      "fromBar": 25,
+      "toBar": 28,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 29,
+      "toBar": 29,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 30,
+      "toBar": 30,
+      "kind": "breakdown",
+      "kick": "Light"
+    },
+    {
+      "fromBar": 31,
+      "toBar": 34,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 35,
+      "toBar": 38,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 39,
+      "toBar": 42,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 43,
+      "toBar": 46,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 47,
+      "toBar": 47,
+      "kind": "build",
+      "kick": "Heavy"
+    },
+    {
+      "fromBar": 48,
+      "toBar": 51,
+      "kind": "outro",
+      "kick": "Heavy"
+    }
+  ]
+}

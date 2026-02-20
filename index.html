@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>8-Lane Rhythm Game (JSON + WAV)</title>
+  <style>
+    :root {
+      --bg: #0b0f18;
+      --panel: #121a2a;
+      --text: #e9eefc;
+      --muted: #9db0d8;
+      --line: rgba(255, 255, 255, .07);
+      --card: rgba(255, 255, 255, .04);
+    }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .wrap {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 16px;
+      padding: 16px;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+
+    .gameCard {
+      background: var(--panel);
+      border-radius: 16px;
+      padding: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, .25);
+    }
+
+    canvas {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #070b12;
+      border-radius: 12px;
+    }
+
+    .side {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      background: #2a3a5f;
+      color: var(--text);
+      border: none;
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:hover {
+      filter: brightness(1.1);
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .big {
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .keys {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    .keyItem {
+      background: var(--card);
+      border: 1px solid rgba(255, 255, 255, .06);
+      border-radius: 10px;
+      padding: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .judge {
+      font-weight: 900;
+    }
+
+    .songList {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .songItem {
+      background: rgba(255, 255, 255, .03);
+      border: 1px solid rgba(255, 255, 255, .06);
+      border-radius: 12px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .songTitle {
+      font-weight: 800;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .songId {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .songBtns {
+      display: flex;
+      gap: 8px;
+    }
+
+    .miniBtn {
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-weight: 800;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="gameCard">
+      <canvas id="cv" width="960" height="540"></canvas>
+      <div class="muted" style="padding:8px 4px 0;">
+        Tips: ブラウザは自動再生制限があるので、必ずボタン操作で開始してください。<br>
+        ファイル命名: <b>{id}.wav</b> / <b>{id}.chart.json</b> / <b>{id}.analysis.json</b><br>
+        操作キー（常に固定）: <b>Shift / Z / S / X / D / C / F / V</b><br>
+        操作: <b>1</b>=速く / <b>2</b>=遅く（ノーツが上に出てから判定バーに触れるまでの時間 = ms）
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="gameCard">
+        <div class="row">
+          <button id="btnPause" disabled>Pause</button>
+          <button id="btnResume" disabled>Resume</button>
+          <button id="btnRestart" disabled>Restart</button>
+        </div>
+        <div class="muted" id="songInfo">songs.json を読み込み中…</div>
+      </div>
+
+      <div class="stat">
+        <div class="judge">Songs</div>
+        <div class="muted">右のボタンでその曲を開始します（Regular / Random）</div>
+        <div class="songList" id="songList"></div>
+      </div>
+
+      <div class="stat">
+        <div class="judge">Note Speed</div>
+        <div>Approach: <b><span id="speedMs">0500</span>ms</b></div>
+        <div class="muted">キー：<b>1</b>=速く / <b>2</b>=遅く（±25ms）</div>
+      </div>
+
+      <div class="stat">
+        <div class="big">Score: <span id="score">0</span></div>
+        <div>Combo: <span id="combo">0</span> / Max: <span id="maxCombo">0</span></div>
+        <div>
+          Perfect: <span id="pCnt">0</span>
+          Great: <span id="gCnt">0</span>
+          Good: <span id="gdCnt">0</span>
+          Miss: <span id="mCnt">0</span>
+        </div>
+        <div class="muted">判定幅: Perfect±40ms / Great±80ms / Good±130ms</div>
+      </div>
+
+      <div class="stat">
+        <div class="judge">Last Judge: <span id="lastJudge">-</span></div>
+        <div class="muted">キー：Shift / Z / S / X / D / C / F / V</div>
+      </div>
+
+      <div class="stat">
+        <div class="judge">Key Map (固定)</div>
+        <div class="keys" id="keys"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      // ===== Config =====
+      const KEY_ORDER = [
+        { label: "Shift", code: "ShiftLeft", altCode: "ShiftRight" }, // lane 0
+        { label: "Z", code: "KeyZ" },                                 // lane 1
+        { label: "S", code: "KeyS" },                                 // lane 2
+        { label: "X", code: "KeyX" },                                 // lane 3
+        { label: "D", code: "KeyD" },                                 // lane 4
+        { label: "C", code: "KeyC" },                                 // lane 5
+        { label: "F", code: "KeyF" },                                 // lane 6
+        { label: "V", code: "KeyV" },                                 // lane 7
+      ];
+
+      const JUDGE = { perfect: 40, great: 80, good: 130, miss: 180 };
+
+      const HIT_Y_NORM = 0.82;
+      const NOTE_H = 14;
+      const NOTE_W_MARGIN = 8;
+
+      let approachMs = 500;
+      let approachSec = approachMs / 1000;
+
+      let speedHudUntilPerf = 0;
+      const SPEED_HUD_SHOW_MS = 900;
+      const SPEED_STEP_MS = 25;
+      const SPEED_MIN_MS = 150;
+      const SPEED_MAX_MS = 2000;
+
+      const speedMsEl = document.getElementById("speedMs");
+      const setApproachMs = (ms) => {
+        approachMs = Math.max(SPEED_MIN_MS, Math.min(SPEED_MAX_MS, Math.round(ms)));
+        approachSec = approachMs / 1000;
+        speedHudUntilPerf = performance.now() + SPEED_HUD_SHOW_MS;
+        if (speedMsEl) speedMsEl.textContent = String(approachMs).padStart(4, "0");
+      };
+      setApproachMs(approachMs);
+
+      const noteColorByLane = (lane) => {
+        if (lane === 0) return "#ff3b3b"; // Shift
+        if (lane === 2 || lane === 4 || lane === 6) return "#3b82f6"; // S/D/F
+        return "#e8f0ff"; // Z/X/C/V
+      };
+
+      // ===== State =====
+      const cv = document.getElementById("cv");
+      const ctx = cv.getContext("2d");
+
+      const btnPause = document.getElementById("btnPause");
+      const btnResume = document.getElementById("btnResume");
+      const btnRestart = document.getElementById("btnRestart");
+
+      const songInfo = document.getElementById("songInfo");
+      const songListEl = document.getElementById("songList");
+
+      const elScore = document.getElementById("score");
+      const elCombo = document.getElementById("combo");
+      const elMaxCombo = document.getElementById("maxCombo");
+      const elLastJudge = document.getElementById("lastJudge");
+      const elPCnt = document.getElementById("pCnt");
+      const elGCnt = document.getElementById("gCnt");
+      const elGdCnt = document.getElementById("gdCnt");
+      const elMCnt = document.getElementById("mCnt");
+      const keysBox = document.getElementById("keys");
+
+      let chart = null;
+      let bpm = 120;
+      let offsetSec = 0;
+
+      let baseNotes = [];
+      let notes = [];
+
+      let currentSong = null; // {id,title}
+      let currentMode = "Regular";
+
+      let score = 0, combo = 0, maxCombo = 0;
+      let pCnt = 0, gCnt = 0, gdCnt = 0, mCnt = 0;
+
+      // Audio
+      let audioCtx = null;
+      let audioBuffer = null;
+      let audioSource = null;
+      let audioStartAt = 0;
+      let pausedAt = 0;
+      let isPlaying = false;
+
+      let chartLoaded = false;
+
+      let laneMap = [0, 1, 2, 3, 4, 5, 6, 7];
+
+      const laneFlashUntil = Array(8).fill(0);
+      const FLASH_SEC = 0.12;
+
+      let judgePopup = null;
+      const POPUP_SEC = 0.35;
+
+      let laneHud = null;
+      const LANE_HUD_SEC = 0.35;
+
+      // ===== Ready countdown =====
+      const READY_SEC = 3.0;
+      let readyState = null;
+      // { startPerf, endPerf, mode, songTitle }
+      let readyTimerId = null;
+      const isReadyActive = () => readyState && performance.now() < readyState.endPerf;
+      const readyRemainingSec = () => {
+        if (!readyState) return 0;
+        return Math.max(0, (readyState.endPerf - performance.now()) / 1000);
+      };
+
+      // during READY: disable judging input
+      const canJudgeNow = () => chartLoaded && !isReadyActive();
+
+      // ===== Helpers =====
+      const beatToSec = (beat) => (60 / bpm) * beat;
+
+      const nowSongSec = () => {
+        if (!audioCtx) return 0;
+        if (!isPlaying) return pausedAt;
+        return (audioCtx.currentTime - audioStartAt) + pausedAt;
+      };
+
+      const resetScore = () => {
+        score = 0; combo = 0; maxCombo = 0;
+        pCnt = 0; gCnt = 0; gdCnt = 0; mCnt = 0;
+        elScore.textContent = score;
+        elCombo.textContent = combo;
+        elMaxCombo.textContent = maxCombo;
+        elPCnt.textContent = pCnt;
+        elGCnt.textContent = gCnt;
+        elGdCnt.textContent = gdCnt;
+        elMCnt.textContent = mCnt;
+        elLastJudge.textContent = "-";
+      };
+
+      const setControlButtons = (enabled) => {
+        btnPause.disabled = !enabled;
+        btnResume.disabled = !enabled;
+        btnRestart.disabled = !enabled;
+      };
+
+      const stopAudio = () => {
+        if (audioSource) {
+          try { audioSource.stop(); } catch (e) { }
+          try { audioSource.disconnect(); } catch (e) { }
+          audioSource = null;
+        }
+        isPlaying = false;
+      };
+
+      const startAudio = (fromSec = 0) => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (!audioBuffer) return;
+
+        stopAudio();
+        audioSource = audioCtx.createBufferSource();
+        audioSource.buffer = audioBuffer;
+        audioSource.connect(audioCtx.destination);
+
+        audioStartAt = audioCtx.currentTime;
+        pausedAt = fromSec;
+        audioSource.start(0, fromSec);
+        isPlaying = true;
+      };
+
+      const pauseAudio = () => {
+        if (!audioCtx || !isPlaying) return;
+        pausedAt = nowSongSec();
+        stopAudio();
+      };
+
+      const loadJSON = async (url) => {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load JSON: " + res.status);
+        return await res.json();
+      };
+
+      const loadAudio = async (url) => {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) throw new Error("Failed to load audio: " + res.status);
+        const arr = await res.arrayBuffer();
+        return await audioCtx.decodeAudioData(arr);
+      };
+
+      const setIdentityLaneMap = () => {
+        laneMap = [0, 1, 2, 3, 4, 5, 6, 7];
+      };
+
+      const setRandomLaneMap = () => {
+        const targets = [1, 2, 3, 4, 5, 6, 7];
+        for (let i = targets.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [targets[i], targets[j]] = [targets[j], targets[i]];
+        }
+        laneMap = [0, ...targets];
+      };
+
+      const rebuildNotesWithLaneMap = () => {
+        notes = baseNotes
+          .map(n => {
+            const mappedLane = laneMap[n.lane] ?? n.lane;
+            return {
+              lane: mappedLane,
+              beat: n.beat,
+              timeSec: beatToSec(n.beat) + offsetSec,
+              hit: false,
+              judged: false
+            };
+          })
+          .sort((a, b) => a.timeSec - b.timeSec);
+      };
+
+      const triggerLaneFlash = (lane, tSec) => {
+        laneFlashUntil[lane] = Math.max(laneFlashUntil[lane], tSec + FLASH_SEC);
+      };
+
+      const showJudgePopup = (text, tSec) => {
+        judgePopup = { text, untilSec: tSec + POPUP_SEC };
+      };
+
+      const showLaneHud = (lane, text, tSec) => {
+        laneHud = { lane, text, untilSec: tSec + LANE_HUD_SEC };
+      };
+
+      const judgeHit = (deltaMs) => {
+        const ad = Math.abs(deltaMs);
+        if (ad <= JUDGE.perfect) return "Perfect";
+        if (ad <= JUDGE.great) return "Great";
+        if (ad <= JUDGE.good) return "Good";
+        return null;
+      };
+
+      const addScore = (result) => {
+        if (result === "Perfect") { score += 1000; combo++; pCnt++; }
+        else if (result === "Great") { score += 700; combo++; gCnt++; }
+        else if (result === "Good") { score += 400; combo++; gdCnt++; }
+        else { combo = 0; mCnt++; }
+
+        if (combo > maxCombo) maxCombo = combo;
+
+        elScore.textContent = score;
+        elCombo.textContent = combo;
+        elMaxCombo.textContent = maxCombo;
+        elPCnt.textContent = pCnt;
+        elGCnt.textContent = gCnt;
+        elGdCnt.textContent = gdCnt;
+        elMCnt.textContent = mCnt;
+        elLastJudge.textContent = result;
+      };
+
+      const markMissIfPassed = (t) => {
+        for (const n of notes) {
+          if (n.judged) continue;
+          const deltaMs = (t - n.timeSec) * 1000;
+          if (deltaMs > JUDGE.good) {
+            n.judged = true;
+            addScore("Miss");
+          } else {
+            break;
+          }
+        }
+      };
+
+      const keyToLane = (code) => {
+        if (code === "ShiftLeft" || code === "ShiftRight") return 0;
+        const idx = KEY_ORDER.findIndex((k, i) => i !== 0 && k.code === code);
+        return idx >= 0 ? idx : null;
+      };
+
+      window.addEventListener("keydown", (e) => {
+        if (e.code === "Digit1") { e.preventDefault(); setApproachMs(approachMs - SPEED_STEP_MS); return; }
+        if (e.code === "Digit2") { e.preventDefault(); setApproachMs(approachMs + SPEED_STEP_MS); return; }
+
+        if (!canJudgeNow()) return;
+
+        const lane = keyToLane(e.code);
+        if (lane === null) return;
+
+        const t = nowSongSec();
+        triggerLaneFlash(lane, t);
+
+        let best = null;
+        let bestAbs = Infinity;
+
+        for (const n of notes) {
+          if (n.judged) continue;
+          if (n.lane !== lane) continue;
+
+          const delta = (t - n.timeSec) * 1000;
+          const ad = Math.abs(delta);
+          if (ad < bestAbs) {
+            bestAbs = ad;
+            best = { n, deltaMs: delta };
+          }
+        }
+
+        if (!best) return;
+
+        const result = judgeHit(best.deltaMs);
+        if (!result) return;
+
+        best.n.judged = true;
+        best.n.hit = true;
+
+        addScore(result);
+        showJudgePopup(result, t);
+        showLaneHud(lane, `${result}  x${combo}`, t);
+      });
+
+      // ===== Render =====
+      const draw = () => {
+        const w = cv.width, h = cv.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const lanes = 8;
+        const laneW = w / lanes;
+        const hitY = h * HIT_Y_NORM;
+
+        // lanes bg
+        for (let i = 0; i < lanes; i++) {
+          ctx.fillStyle = (i % 2 === 0) ? "#0f1726" : "#0c1320";
+          ctx.fillRect(i * laneW, 0, laneW, h);
+          ctx.strokeStyle = "#22314f";
+          ctx.strokeRect(i * laneW, 0, laneW, h);
+        }
+
+        // hit bar
+        ctx.fillStyle = "#ff3b3b";
+        ctx.fillRect(0, hitY, w, 6);
+
+        // key labels
+        ctx.font = "14px system-ui";
+        ctx.fillStyle = "#9db0d8";
+        for (let i = 0; i < lanes; i++) {
+          ctx.fillText(KEY_ORDER[i].label, i * laneW + 10, hitY + 28);
+        }
+
+        ctx.fillStyle = "#9db0d8";
+        ctx.font = "14px system-ui";
+        ctx.fillText("Speed: 1=faster / 2=slower   |   Keys fixed: Shift Z S X D C F V", 12, h - 12);
+
+        if (!chartLoaded) {
+          ctx.fillStyle = "#e9eefc";
+          ctx.font = "24px system-ui";
+          ctx.fillText("Select a song on the right", 24, 60);
+
+          if (performance.now() <= speedHudUntilPerf) {
+            const txt = String(approachMs).padStart(4, "0") + "ms";
+            ctx.font = "20px system-ui";
+            ctx.fillText(`Speed: ${txt}`, 12, 48);
+          }
+
+          requestAnimationFrame(draw);
+          return;
+        }
+
+        const t = nowSongSec();
+
+        // lane flash
+        for (let i = 0; i < lanes; i++) {
+          if (t <= laneFlashUntil[i]) {
+            ctx.globalAlpha = 0.25;
+            ctx.fillStyle = noteColorByLane(i);
+            ctx.fillRect(i * laneW, 0, laneW, h);
+            ctx.globalAlpha = 1.0;
+          }
+        }
+
+        // notes
+        for (const n of notes) {
+          if (n.judged && n.hit) continue;
+
+          const dt = n.timeSec - t;
+          const progress = 1 - (dt / approachSec);
+          const y = progress * hitY;
+
+          if (y < -NOTE_H || y > hitY + 80) continue;
+
+          const x0 = n.lane * laneW + NOTE_W_MARGIN;
+          const nw = laneW - NOTE_W_MARGIN * 2;
+
+          ctx.fillStyle = noteColorByLane(n.lane);
+          ctx.fillRect(x0, y - NOTE_H / 2, nw, NOTE_H);
+        }
+
+        // time HUD
+        ctx.fillStyle = "#e9eefc";
+        ctx.font = "18px system-ui";
+        ctx.textAlign = "left";
+        ctx.fillText(`Time: ${t.toFixed(2)}s`, 12, 24);
+
+        // speed HUD
+        if (performance.now() <= speedHudUntilPerf) {
+          const txt = String(approachMs).padStart(4, "0") + "ms";
+          ctx.fillStyle = "#e9eefc";
+          ctx.font = "20px system-ui";
+          ctx.fillText(`Speed: ${txt}`, 12, 48);
+        }
+
+        // right top: score/combo
+        ctx.fillStyle = "#e9eefc";
+        ctx.font = "22px system-ui";
+        ctx.textAlign = "right";
+        ctx.fillText(`SCORE  ${score}`, w - 14, 30);
+        ctx.font = "18px system-ui";
+        ctx.fillText(`COMBO  ${combo}`, w - 14, 56);
+        ctx.textAlign = "left";
+
+        // judge popup (center)
+        if (judgePopup && t <= judgePopup.untilSec) {
+          ctx.fillStyle = "#e9eefc";
+          ctx.font = "32px system-ui";
+          ctx.textAlign = "center";
+          ctx.fillText(judgePopup.text, w * 0.5, hitY - 30);
+          ctx.textAlign = "left";
+        } else {
+          judgePopup = null;
+        }
+
+        // lane HUD
+        if (laneHud && t <= laneHud.untilSec) {
+          const cx = laneHud.lane * laneW + laneW / 2;
+          ctx.fillStyle = "#e9eefc";
+          ctx.font = "18px system-ui";
+          ctx.textAlign = "center";
+          ctx.fillText(laneHud.text, cx, hitY - 60);
+          ctx.textAlign = "left";
+        } else {
+          laneHud = null;
+        }
+
+        // ===== READY overlay (3 sec) =====
+        if (isReadyActive()) {
+          const rem = readyRemainingSec();
+          const count = Math.max(1, Math.ceil(rem)); // 3..1
+          // dim overlay
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = "#000";
+          ctx.fillRect(0, 0, w, hitY);
+          ctx.globalAlpha = 1.0;
+
+          ctx.fillStyle = "#e9eefc";
+          ctx.textAlign = "center";
+          ctx.font = "34px system-ui";
+          ctx.fillText("Are you ready?", w * 0.5, hitY * 0.35);
+          ctx.font = "56px system-ui";
+          ctx.fillText(String(count), w * 0.5, hitY * 0.55);
+
+          ctx.font = "16px system-ui";
+          ctx.fillStyle = "#9db0d8";
+          const mode = readyState?.mode ?? currentMode;
+          ctx.fillText(`${currentSong?.title ?? ""}   |   Mode: ${mode}`, w * 0.5, hitY * 0.70);
+
+          ctx.textAlign = "left";
+        }
+
+        if (!isReadyActive()) {
+          // READY中はMiss進行もしない（音も鳴ってないので）
+          markMissIfPassed(t);
+        }
+
+        requestAnimationFrame(draw);
+      };
+
+      // ===== UI init =====
+      const renderKeyMap = () => {
+        keysBox.innerHTML = "";
+        KEY_ORDER.forEach((k, i) => {
+          const div = document.createElement("div");
+          div.className = "keyItem";
+          div.innerHTML = `<span>Lane ${i}</span><strong>${k.label}</strong>`;
+          keysBox.appendChild(div);
+        });
+      };
+      renderKeyMap();
+      requestAnimationFrame(draw);
+
+      // ===== Song loading / playing =====
+      const fileOf = (songOrId, kind) => {
+        const id = (typeof songOrId === "string") ? songOrId : songOrId.id;
+        if (kind === "audio") {
+          // Use explicit audio file if available, otherwise default to id.wav
+          if (typeof songOrId === "object" && songOrId.audio) return songOrId.audio;
+          return `${id}.wav`;
+        }
+        if (kind === "chart") return `${id}.chart.json`;
+        if (kind === "analysis") return `${id}.analysis.json`;
+        throw new Error("unknown kind");
+      };
+
+      const clearReady = () => {
+        readyState = null;
+        if (readyTimerId) {
+          clearTimeout(readyTimerId);
+          readyTimerId = null;
+        }
+      };
+
+      const hardResetSongState = () => {
+        clearReady();
+        chartLoaded = false;
+        chart = null;
+        audioBuffer = null;
+        baseNotes = [];
+        notes = [];
+        stopAudio();
+        pausedAt = 0;
+        setControlButtons(false);
+      };
+
+      const applyModeAndRebuild = (mode) => {
+        currentMode = mode;
+        if (mode === "Random") setRandomLaneMap();
+        else setIdentityLaneMap();
+        rebuildNotesWithLaneMap();
+      };
+
+      const loadSongAssets = async (song) => {
+        hardResetSongState();
+        currentSong = song;
+
+        const chartUrl = fileOf(song.id, "chart");
+        const audioUrl = fileOf(song, "audio");
+
+        songInfo.textContent = `Loading: ${song.title} (${song.id}) ...`;
+
+        chart = await loadJSON(chartUrl);
+        songInfo.textContent = `Loading audio: ${audioUrl} ...`;
+        audioBuffer = await loadAudio(audioUrl);
+
+        bpm = chart.bpm;
+        offsetSec = chart.offsetSec || 0;
+
+        baseNotes = (chart.notes || []).map(n => ({ lane: n.lane, beat: n.beat }));
+        applyModeAndRebuild("Regular");
+
+        chartLoaded = true;
+        setControlButtons(true);
+
+        const beats = chart.bars * (chart.timeSignature?.[0] ?? 4);
+        const approxSec = beatToSec(beats);
+        songInfo.textContent =
+          `Ready: ${song.title} / BPM ${chart.bpm} / Bars ${chart.bars} (≈${approxSec.toFixed(1)}s)`;
+      };
+
+      const startPlayWithReady = async (mode) => {
+        if (!chartLoaded || !audioBuffer) return;
+
+        // prepare chart/mode first
+        clearReady();
+        stopAudio();
+        pausedAt = 0;
+
+        applyModeAndRebuild(mode);
+        resetScore();
+        notes.forEach(n => { n.hit = false; n.judged = false; });
+
+        // ensure AudioContext is resumable during the user gesture chain
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") await audioCtx.resume();
+
+        // set READY overlay
+        const startPerf = performance.now();
+        readyState = {
+          startPerf,
+          endPerf: startPerf + READY_SEC * 1000,
+          mode,
+          songTitle: currentSong?.title ?? ""
+        };
+
+        songInfo.textContent =
+          `Ready... ${currentSong?.title ?? "?"} (${currentSong?.id ?? "?"})   |   Mode: ${mode}`;
+
+        // start audio exactly after 3 seconds
+        readyTimerId = setTimeout(() => {
+          // if canceled / replaced
+          if (!readyState) return;
+          clearReady();
+
+          // start from 0
+          startAudio(0);
+
+          songInfo.textContent =
+            `Playing: ${currentSong?.title ?? "?"} (${currentSong?.id ?? "?"})   |   Mode: ${currentMode}`;
+        }, READY_SEC * 1000);
+      };
+
+      // ===== Controls =====
+      btnPause.addEventListener("click", () => {
+        // READY中は一旦キャンセル（音も鳴ってないので）
+        if (isReadyActive()) {
+          clearReady();
+          songInfo.textContent = "Ready canceled.";
+          return;
+        }
+        pauseAudio();
+      });
+
+      btnResume.addEventListener("click", async () => {
+        if (!chartLoaded || !audioBuffer) return;
+        if (isReadyActive()) return; // READY中はResume不要
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") await audioCtx.resume();
+        startAudio(pausedAt);
+      });
+
+      btnRestart.addEventListener("click", async () => {
+        if (!chartLoaded || !audioBuffer) return;
+        // RestartはREADY付きでやり直す（現在モードで）
+        await startPlayWithReady(currentMode);
+      });
+
+      // ===== Songs UI =====
+      const renderSongList = (songs) => {
+        songListEl.innerHTML = "";
+
+        songs.forEach(song => {
+          const item = document.createElement("div");
+          item.className = "songItem";
+
+          const left = document.createElement("div");
+          left.innerHTML = `
+            <div class="songTitle">${song.title ?? song.id}</div>
+          `;
+
+          const btns = document.createElement("div");
+          btns.className = "songBtns";
+
+          const bReg = document.createElement("button");
+          bReg.className = "miniBtn";
+          bReg.textContent = "Regular";
+
+          const bRnd = document.createElement("button");
+          bRnd.className = "miniBtn";
+          bRnd.textContent = "Random";
+
+          const disableRow = (disabled) => {
+            bReg.disabled = disabled;
+            bRnd.disabled = disabled;
+          };
+
+          const handle = async (mode) => {
+            try {
+              disableRow(true);
+              await loadSongAssets(song);
+              await startPlayWithReady(mode);
+            } catch (e) {
+              console.error(e);
+              songInfo.textContent = `Load failed: ${e.message}`;
+              hardResetSongState();
+            } finally {
+              disableRow(false);
+            }
+          };
+
+          bReg.addEventListener("click", () => handle("Regular"));
+          bRnd.addEventListener("click", () => handle("Random"));
+
+          btns.appendChild(bReg);
+          btns.appendChild(bRnd);
+
+          item.appendChild(left);
+          item.appendChild(btns);
+          songListEl.appendChild(item);
+        });
+      };
+
+      // ===== Boot =====
+      (async () => {
+        try {
+          const songs = await loadJSON("songs.json");
+          if (!Array.isArray(songs) || songs.length === 0) {
+            songInfo.textContent = "songs.json が空です（配列で曲を定義してください）";
+            return;
+          }
+          renderSongList(songs);
+          songInfo.textContent = "曲を右側から選んでください（Regular / Random）";
+        } catch (e) {
+          console.error(e);
+          songInfo.textContent = "songs.json の読み込みに失敗: " + e.message;
+        }
+      })();
+    })();
+  </script>
+</body>
+
+</html>
