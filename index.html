@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="icon" href="data:," />
   <title>8-Lane Rhythm Game (JSON + WAV)</title>
   <style>
     :root {
@@ -286,7 +287,6 @@
 
       let chart = null;
       let bpm = 120;
-      let offsetSec = 0;
 
       let baseNotes = [];
       let notes = [];
@@ -331,9 +331,6 @@
 
       // during READY: disable judging input
       const canJudgeNow = () => chartLoaded && !isReadyActive();
-
-      // ===== Helpers =====
-      const beatToSec = (beat) => (60 / bpm) * beat;
 
       const nowSongSec = () => {
         if (!audioCtx) return 0;
@@ -421,15 +418,20 @@
         notes = baseNotes
           .map(n => {
             const mappedLane = laneMap[n.lane] ?? n.lane;
+            // JSONのミリ秒(ms)のみを使用する
+            const tSec = parseFloat(n.ms) / 1000.0;
+
             return {
               lane: mappedLane,
-              beat: n.beat,
-              timeSec: beatToSec(n.beat) + offsetSec,
+              ms: n.ms,
+              timeSec: tSec,
               hit: false,
               judged: false
             };
           })
           .sort((a, b) => a.timeSec - b.timeSec);
+
+        console.log("Rebuilt notes:", notes.slice(0, 5));
       };
 
       const triggerLaneFlash = (lane, tSec) => {
@@ -750,19 +752,20 @@
         songInfo.textContent = `Loading audio: ${audioUrl} ...`;
         audioBuffer = await loadAudio(audioUrl);
 
-        bpm = chart.bpm;
-        offsetSec = chart.offsetSec || 0;
+        bpm = chart.bpm || 120;
 
-        baseNotes = (chart.notes || []).map(n => ({ lane: n.lane, beat: n.beat }));
+        baseNotes = (chart.notes || []).map(n => ({
+          lane: n.lane,
+          ms: n.ms
+        }));
         applyModeAndRebuild("Regular");
 
         chartLoaded = true;
         setControlButtons(true);
 
-        const beats = chart.bars * (chart.timeSignature?.[0] ?? 4);
-        const approxSec = beatToSec(beats);
+        const approxSec = (baseNotes.length > 0) ? (baseNotes[baseNotes.length - 1].ms / 1000) : 0;
         songInfo.textContent =
-          `Ready: ${song.title} / BPM ${chart.bpm} / Bars ${chart.bars} (≈${approxSec.toFixed(1)}s)`;
+          `Ready: ${song.title} / BPM ${chart.bpm} / Max ${chart.bars} Bars (≈${approxSec.toFixed(1)}s)`;
       };
 
       const startPlayWithReady = async (mode) => {

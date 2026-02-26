@@ -11,32 +11,37 @@ PLEASANT_CHORDS_2 = [[1,3], [3,5], [5,7], [2,4], [4,6], [1,7]]
 PLEASANT_CHORDS_3 = [[1,3,5], [3,5,7], [1,2,3], [5,6,7], [2,4,6], [1,4,7]]
 
 def analyze_audio_structure(y, sr, bpm, offset_sec, total_bars):
-    """ 音量バランスからセクションを判定 """
-    print("Analyzing song structure...")
-    nyquist = 0.5 * sr
-    b_low, a_low = butter(2, 200 / nyquist, btype='low')
-    y_low = lfilter(b_low, a_low, y)
+    """ librosaを使って音量・周波数帯域からEDM特有のセクションを判定 """
+    print("Analyzing EDM structure using librosa...")
     
+    # STFTを用いてスペクトログラムを計算
+    S = np.abs(librosa.stft(y))
+    freqs = librosa.fft_frequencies(sr=sr)
+    
+    # Low帯域(キックやベース)のみのマスクを作成 (< 250 Hz)
+    low_mask = freqs < 250
+    S_low = S[low_mask, :]
+    
+    # librosaで全体のRMS計算し、Low帯域は手動で計算 (ParameterError回避)
+    rms_full = librosa.feature.rms(S=S)[0]
+    rms_low = np.sqrt(np.mean(S_low**2, axis=0)) if S_low.shape[0] > 0 else np.zeros_like(rms_full)
+    
+    times = librosa.times_like(rms_full, sr=sr)
     seconds_per_bar = (60.0 / bpm) * 4
-    samples_per_bar = int(seconds_per_bar * sr)
-    start_sample = int(offset_sec * sr)
     
     bar_stats = []
     for i in range(total_bars):
-        start = start_sample + i * samples_per_bar
-        end = start + samples_per_bar
-        if start >= len(y): break
-        end = min(end, len(y))
+        start_t = offset_sec + i * seconds_per_bar
+        end_t = start_t + seconds_per_bar
         
-        c_full = y[start:end]
-        c_low = y_low[start:end]
-        if len(c_full) == 0:
+        idx = np.where((times >= start_t) & (times < end_t))[0]
+        if len(idx) == 0:
             bar_stats.append({'full': 0, 'low': 0})
             continue
-        
-        rms_full = np.sqrt(np.mean(c_full**2))
-        rms_low = np.sqrt(np.mean(c_low**2))
-        bar_stats.append({'full': rms_full, 'low': rms_low})
+            
+        bar_rms_full = np.mean(rms_full[idx])
+        bar_rms_low = np.mean(rms_low[idx])
+        bar_stats.append({'full': bar_rms_full, 'low': bar_rms_low})
 
     if not bar_stats: return ['verse'] * total_bars
 
@@ -87,7 +92,7 @@ def get_band_onset_strengths(y, sr):
         
     return normalize(onset_l), normalize(onset_m), normalize(onset_h)
 
-def generate_music_game_chart(audio_path, target_notes_count):
+def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None):
     print(f"Loading {audio_path}...")
     try:
         y, sr = librosa.load(audio_path, sr=None)
@@ -95,24 +100,55 @@ def generate_music_game_chart(audio_path, target_notes_count):
         print(f"Error: {e}")
         return None
 
-    # --- 1. BPM/Offset ---
+    # --- 1. メロディとパーカッションのリズム推定 (Harmonic & Percussive components) ---
+    print("Estimating melody and percussive rhythm...")
+    y_harmonic, y_percussive = librosa.effects.hpss(y)
+    melody_onset_env = librosa.onset.onset_strength(y=y_harmonic, sr=sr)
+    perc_onset_env = librosa.onset.onset_strength(y=y_percussive, sr=sr)
+
+    if np.max(melody_onset_env) > 0:
+        melody_onset_env = melody_onset_env / np.max(melody_onset_env)
+    if np.max(perc_onset_env) > 0:
+        perc_onset_env = perc_onset_env / np.max(perc_onset_env)
+
+    # --- 1.5. BPM/Offset ---
     print("Detecting BPM...")
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-    try:
-        tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
-        bpm = float(tempo[0]) if np.ndim(tempo) > 0 else float(tempo)
-    except:
-        bpm = 140.0
-        
-    if bpm < 60: bpm *= 2
-    if bpm > 300: bpm /= 2
-    bpm = round(bpm)
-    print(f"BPM: {bpm}")
+    
+    bpm = None
+    offset_sec = None
+    
+    if analysis_file and os.path.exists(analysis_file):
+        try:
+            with open(analysis_file, 'r', encoding='utf-8') as f:
+                analysis_data = json.load(f)
+                if 'bpm' in analysis_data:
+                    bpm = float(analysis_data['bpm'])
+                    print(f"Loaded BPM from analysis file: {bpm}")
+                if 'offsetSec' in analysis_data:
+                    offset_sec = float(analysis_data['offsetSec'])
+                    print(f"Loaded Offset from analysis file: {offset_sec}")
+        except Exception as e:
+            print(f"Failed to read analysis file: {e}")
 
-    print("Detecting Onset Frames...")
-    onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, backtrack=True)
-    onset_times = librosa.frames_to_time(onset_frames, sr=sr)
-    offset_sec = onset_times[0] if len(onset_times) > 0 else 0.0
+    if bpm is None:
+        try:
+            tempo, _ = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+            bpm = float(tempo[0]) if np.ndim(tempo) > 0 else float(tempo)
+        except:
+            bpm = 140.0
+            
+        if bpm < 60: bpm *= 2
+        if bpm > 300: bpm /= 2
+        bpm = round(bpm)
+        print(f"Auto-detected BPM: {bpm}")
+
+    if offset_sec is None:
+        print("Detecting Onset Frames...")
+        onset_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, backtrack=True)
+        onset_times = librosa.frames_to_time(onset_frames, sr=sr)
+        offset_sec = onset_times[0] if len(onset_times) > 0 else 0.0
+        print(f"Auto-detected Offset: {offset_sec}")
 
     # --- 2. 解析 ---
     print("Analyzing frequency bands...")
@@ -126,16 +162,52 @@ def generate_music_game_chart(audio_path, target_notes_count):
     
     section_map = analyze_audio_structure(y, sr, bpm, offset_sec, total_bars)
     
-    # --- 3. グリッド生成 ---
-    max_grid = int(total_beats_float * 4)
-    all_grids = [i * 0.25 for i in range(max_grid)]
+    # 構成の切り替わり地点 (Structural boundaries) を記録
+    # 前の小節とセクションが変わったタイミングのビートを記録します
+    structural_boundaries = set()
+    for bar_idx in range(1, len(section_map)):
+        if section_map[bar_idx] != section_map[bar_idx-1]:
+            # 小節の頭のビートを切り替わり地点とする (bar_idx * 4)
+            structural_boundaries.add(bar_idx * 4.0)
+
+    # --- 3. グリッド生成 (解析された生のリズムを使用) ---
+    print("Extracting raw onsets from melody and percussion...")
+    melody_frames = librosa.onset.onset_detect(onset_envelope=melody_onset_env, sr=sr, backtrack=True)
+    perc_frames = librosa.onset.onset_detect(onset_envelope=perc_onset_env, sr=sr, backtrack=True)
+    env_frames = librosa.onset.onset_detect(onset_envelope=onset_env, sr=sr, backtrack=True)
+    
+    all_onset_frames = np.concatenate([melody_frames, perc_frames, env_frames])
+    all_onset_frames = np.unique(all_onset_frames)
+    all_onset_times = librosa.frames_to_time(all_onset_frames, sr=sr)
+    all_onset_times.sort()
+    
+    # 重複や近すぎるオンセット（50ms未満）を除外
+    # --- クオンタイズ処理 (16分音符スナップ) ---
+    filtered_grids = {}
+    for t in all_onset_times:
+        if t < offset_sec:
+            continue
+            
+        beat_float = (t - offset_sec) / seconds_per_beat
+        # 16分音符 (1/4拍) 単位で丸める
+        quantized_beat = round(beat_float * 4.0) / 4.0
+        
+        # すでに同じビートにスナップされたオンセットがあればスキップ
+        if quantized_beat not in filtered_grids:
+            quantized_t = offset_sec + (quantized_beat * seconds_per_beat)
+            filtered_grids[quantized_beat] = quantized_t
+            
+    # 時間をbeatと秒(t)の両方で保持するように変更
+    all_grids = [{'beat': beat, 't': t} for beat, t in sorted(filtered_grids.items())]
     
     grid_features = []
     grid_scores = []
     
     print("Mapping audio features...")
-    for beat in all_grids:
-        t = beat * seconds_per_beat + offset_sec
+    for grid_info in all_grids:
+        beat = grid_info['beat']
+        t = grid_info['t']
+        
         idx = np.searchsorted(times_map, t)
         if idx >= len(times_map): idx = len(times_map) - 1
         
@@ -147,31 +219,45 @@ def generate_music_game_chart(audio_path, target_notes_count):
         m_val = np.max(o_mid[s_idx:e_idx])
         h_val = np.max(o_high[s_idx:e_idx])
         env_val = np.max(onset_env[s_idx:e_idx])
+        melody_val = np.max(melody_onset_env[s_idx:e_idx])
+        perc_val = np.max(perc_onset_env[s_idx:e_idx])
         
         bar_idx = int(beat // 4)
         sec = section_map[bar_idx] if bar_idx < len(section_map) else 'verse'
         
-        score = env_val
-        if sec == 'drop': score *= 1.5
-        elif sec == 'break': score *= 0.2
-        elif sec == 'buildup': score *= (1.0 + (beat%4)/4.0)
+        # 曲が静か（全体オンセットが弱い）で、メロディかパーカッションが際立っている場合は、そのリズムを特別に強くする
+        is_quiet = env_val < 0.3
         
-        if beat % 1.0 == 0: score *= 1.2
+        if is_quiet and (melody_val > 0.4 or perc_val > 0.4):
+            # メロディかパーカッション、強い方のリズムに合わせる
+            dominant_val = max(melody_val, perc_val)
+            score = dominant_val * 4.0
+        else:
+            # メロディのリズムとパーカッシブなリズムの両方をベースにスコアを算出
+            score = melody_val * 1.5 + perc_val * 1.5 + env_val * 0.5
+            
+        if sec == 'drop': score *= 8.0               # 盛り上がる箇所はノーツを大幅に増やす
+        elif sec == 'outro': score *= 0.05           # アウトロはノーツを極限まで減らす
+        elif sec == 'break': score *= 0.1            # 落ち着いた箇所もノーツをかなり減らす
+        elif sec == 'intro': score *= 0.3            # イントロは少なめ
+        elif sec == 'buildup': score *= (2.0 + (beat%4)/2.0) # ビルドアップは徐々に増やす
+        else: score *= 1.0                           # verse等は通常
         
-        grid_features.append({'beat': beat, 'l': l_val, 'm': m_val, 'h': h_val, 'sec': sec})
+        # 拍の頭に近い場合は少しスコアを上げる
+        if abs((beat % 1.0) - round(beat % 1.0)) < 0.1: score *= 1.2
+        
+        grid_features.append({'beat': beat, 't': t, 'l': l_val, 'm': m_val, 'h': h_val, 'melody': melody_val, 'perc': perc_val, 'sec': sec})
         grid_scores.append(score)
 
-    # --- 4. ノーツ選択 ---
-    grid_scores = np.array(grid_scores) + 1e-9
-    probs = grid_scores / grid_scores.sum()
+    # --- 4. ノーツ選択 (TOP-N選択へ変更) ---
+    grid_scores = np.array(grid_scores)
     
     num_select = min(len(all_grids), target_notes_count)
-    try:
-        selected_indices = np.random.choice(len(all_grids), size=num_select, replace=False, p=probs)
-    except:
-        selected_indices = np.random.choice(len(all_grids), size=num_select, replace=False)
-        
-    selected_indices = sorted(selected_indices)
+    
+    # スコアが高いものから順番に TOP-N 個を取得
+    top_indices = np.argsort(grid_scores)[::-1][:num_select]
+    
+    selected_indices = sorted(top_indices)
     print(f"Generating notes for {len(selected_indices)} beats...")
 
     # --- 5. 配置ロジック (階段抑制版) ---
@@ -191,6 +277,7 @@ def generate_music_game_chart(audio_path, target_notes_count):
     for idx in selected_indices:
         feat = grid_features[idx]
         beat = feat['beat']
+        t_sec = feat['t']
         l_str = feat['l']
         m_str = feat['m']
         h_str = feat['h']
@@ -198,15 +285,25 @@ def generate_music_game_chart(audio_path, target_notes_count):
         
         assigned_lanes = []
         
+        # 楽曲構成の切り替わり地点か判定（誤差0.1beat内）
+        is_structure_boundary = False
+        for bnd_beat in structural_boundaries:
+            if abs(beat - bnd_beat) < 0.1:
+                is_structure_boundary = True
+                break
+
         # --- A. Kick (Lane 0) ---
         is_kick_heavy = (l_str > 0.6)
-        is_bar_head = (beat % 4 == 0)
         use_shift = False
         
-        if shift_count < max_shift_notes:
-            if is_kick_heavy and (is_bar_head or sec=='drop'):
+        if is_structure_boundary:
+            # 切り替わり地点では高い確率でShift(Lane 0)ノーツを降らせる
+            if random.random() < 0.9: 
+                use_shift = True
+        elif shift_count < max_shift_notes:
+            if is_kick_heavy and sec=='drop':
                 if random.random() < 0.7: use_shift = True
-            elif is_bar_head and sec != 'break':
+            elif abs((beat % 4.0) - round(beat % 4.0)) < 0.1 and sec != 'break':
                 if random.random() < 0.3: use_shift = True
         
         if use_shift:
@@ -215,120 +312,103 @@ def generate_music_game_chart(audio_path, target_notes_count):
             
         # --- B. 鍵盤 ---
         is_snare_cymbal = (h_str > m_str and h_str > 0.5)
-        is_melody = (m_str > h_str)
+        melody_str = feat.get('melody', 0.0)
+        perc_str = feat.get('perc', 0.0)
         
-        use_chord = False
-        chord_size = 1
+        # メロディ成分とパーカッシブ成分の比較
+        is_melody = (melody_str > perc_str or m_str > h_str)
         
-        if sec == 'drop':
-            if is_snare_cymbal: chord_size = 3 if random.random() < 0.2 else 2
-            elif is_kick_heavy: chord_size = 2
-        elif sec == 'buildup':
-            if is_snare_cymbal: chord_size = 2
+        # 同時押しを廃止し単音のみの評価とする
+        # --- 単音 (階段抑制ロジック) ---
+        next_lane = -1
         
-        if chord_size > 1: use_chord = True
+        # パターン更新 (duration切れ または 新しいフレーズ感)
+        if pattern_duration <= 0:
+            r = random.random()
             
-        if use_chord:
-            c_list = PLEASANT_CHORDS_3 if chord_size == 3 else PLEASANT_CHORDS_2
-            valid = [c for c in c_list if not set(c).intersection(last_lanes)]
-            if not valid: valid = c_list
-            keys_to_add = random.choice(valid)
-            
-            # 同時押し後はパターンをリセット
+            # デフォルトはランダム（乱打）
             flow_state['type'] = 'random'
-            pattern_duration = 0
-            
-        else:
-            # --- 単音 (階段抑制ロジック) ---
-            next_lane = -1
-            
-            # パターン更新 (duration切れ または 新しいフレーズ感)
-            if pattern_duration <= 0:
-                r = random.random()
-                
-                # デフォルトはランダム（乱打）
-                flow_state['type'] = 'random'
-                pattern_duration = random.randint(4, 16)
+            pattern_duration = random.randint(4, 16)
 
-                # メロディが強くても階段にする確率は低くする (0.6 -> 0.25)
-                if is_melody:
-                    if r < 0.25: 
-                        flow_state['type'] = 'stairs'
-                        flow_state['dir'] = 1 if random.random() > 0.5 else -1
-                        # 階段は短く終わらせる (max 6)
-                        pattern_duration = random.randint(3, 6)
-                
-                # トリルも低確率 (0.15)
-                elif is_snare_cymbal:
-                    if r < 0.15:
-                        flow_state['type'] = 'trill'
-                        base = random.randint(1,6)
-                        flow_state['trill_pair'] = [base, base+1]
-                        pattern_duration = random.randint(4, 8)
+            # メロディが強くても階段にする確率は低くする (0.6 -> 0.25)
+            if is_melody:
+                if r < 0.25: 
+                    flow_state['type'] = 'stairs'
+                    flow_state['dir'] = 1 if random.random() > 0.5 else -1
+                    # 階段は短く終わらせる (max 6)
+                    pattern_duration = random.randint(3, 6)
+            
+            # トリルも低確率 (0.15)
+            elif is_snare_cymbal:
+                if r < 0.15:
+                    flow_state['type'] = 'trill'
+                    base = random.randint(1,6)
+                    flow_state['trill_pair'] = [base, base+1]
+                    pattern_duration = random.randint(4, 8)
 
-            # --- レーン決定 ---
-            if flow_state['type'] == 'stairs':
-                flow_state['idx'] = (flow_state['idx'] + flow_state['dir'])
-                # 折り返し
-                if flow_state['idx'] > 6: 
-                    flow_state['idx'] = 5
-                    flow_state['dir'] = -1
-                elif flow_state['idx'] < 0:
-                    flow_state['idx'] = 1
-                    flow_state['dir'] = 1
-                next_lane = all_keys[flow_state['idx']]
-                
-            elif flow_state['type'] == 'trill':
-                pair = flow_state['trill_pair']
-                if list(last_lanes) and list(last_lanes)[0] == pair[0]:
-                    next_lane = pair[1]
-                else:
-                    next_lane = pair[0]
+        # --- レーン決定 ---
+        if flow_state['type'] == 'stairs':
+            flow_state['idx'] = (flow_state['idx'] + flow_state['dir'])
+            # 折り返し
+            if flow_state['idx'] > 6: 
+                flow_state['idx'] = 5
+                flow_state['dir'] = -1
+            elif flow_state['idx'] < 0:
+                flow_state['idx'] = 1
+                flow_state['dir'] = 1
+            next_lane = all_keys[flow_state['idx']]
+            
+        elif flow_state['type'] == 'trill':
+            pair = flow_state['trill_pair']
+            if list(last_lanes) and list(last_lanes)[0] == pair[0]:
+                next_lane = pair[1]
             else:
-                # --- Improved Random (Wide Spread) ---
-                # 直前のレーンと近いところばかり選ぶと「偶発的階段」になるので
-                # 離れたレーンを選びやすくする重み付け
-                
-                weights = []
-                last_l = list(last_lanes)[0] if last_lanes else 4
-                
-                for k in all_keys:
-                    if k in last_lanes:
-                        weights.append(0) # 縦連禁止
-                    else:
-                        dist = abs(k - last_l)
-                        # 距離が遠いほど重みを大きく (距離1=1, 距離6=6)
-                        # ただし極端になりすぎないように +1
-                        weights.append(dist + 1)
-                
-                # 重みに基づいて選択
-                total_w = sum(weights)
-                if total_w > 0:
-                    probs = [w/total_w for w in weights]
-                    next_lane = np.random.choice(all_keys, p=probs)
+                next_lane = pair[0]
+        else:
+            # --- Improved Random (Wide Spread) ---
+            # 直前のレーンと近いところばかり選ぶと「偶発的階段」になるので
+            # 離れたレーンを選びやすくする重み付け
+            
+            weights = []
+            last_l = list(last_lanes)[0] if last_lanes else 4
+            
+            for k in all_keys:
+                if k in last_lanes:
+                    weights.append(0) # 縦連禁止
                 else:
-                    next_lane = random.choice([k for k in all_keys if k not in last_lanes])
-                
-                flow_state['idx'] = next_lane - 1
+                    dist = abs(k - last_l)
+                    # 距離が遠いほど重みを大きく (距離1=1, 距離6=6)
+                    # ただし極端になりすぎないように +1
+                    weights.append(dist + 1)
+            
+            # 重みに基づいて選択
+            total_w = sum(weights)
+            if total_w > 0:
+                probs = [w/total_w for w in weights]
+                next_lane = np.random.choice(all_keys, p=probs)
+            else:
+                next_lane = random.choice([k for k in all_keys if k not in last_lanes])
+            
+            flow_state['idx'] = next_lane - 1
 
-            # 念のための縦連防止
-            while next_lane in last_lanes:
-                next_lane = random.choice(all_keys)
-                
-            keys_to_add = [next_lane]
+        # 念のための縦連防止
+        while next_lane in last_lanes:
+            next_lane = random.choice(all_keys)
+            
+        keys_to_add = [next_lane]
 
         assigned_lanes.extend(keys_to_add)
         
         for l in assigned_lanes:
-            beat_val = int(beat) if beat.is_integer() else beat
-            notes.append({"lane": int(l), "beat": beat_val})
+            ms_val = int(round(t_sec * 1000))
+            notes.append({"lane": int(l), "ms": ms_val})
             
         current_keys = set([l for l in assigned_lanes if l != 0])
         if current_keys:
             last_lanes = current_keys
             pattern_duration -= 1
 
-    notes.sort(key=lambda x: x['beat'])
+    notes.sort(key=lambda x: x['ms'])
 
     chart_data = {
         "title": "Generated Chart (Less Stairs)",
@@ -354,29 +434,35 @@ def generate_music_game_chart(audio_path, target_notes_count):
 
 if __name__ == "__main__":
     input_arg = "song"
+    chart_type = "normal"
     target_notes = 800
     if len(sys.argv) > 1: input_arg = sys.argv[1]
-    if len(sys.argv) > 2:
-        try: target_notes = int(sys.argv[2])
+    if len(sys.argv) > 2: chart_type = sys.argv[2]
+    if len(sys.argv) > 3:
+        try: target_notes = int(sys.argv[3])
         except: pass
 
     if input_arg == "target":
         base_name = "target"
         target_wav = "target.wav"
+        target_analysis = "target.analysis.json"
     elif input_arg.endswith(".wav"):
         base_name = input_arg[:-4]
         target_wav = input_arg
+        target_analysis = f"{base_name}.analysis.json"
     else:
         base_name = input_arg
         target_wav = f"{input_arg}.wav"
+        target_analysis = f"{input_arg}.analysis.json"
         
-    output_filename = f"{base_name}.chart.json"
+    output_filename = f"{base_name}_{chart_type}.chart.json"
     
     print(f"Target: {target_wav} -> {output_filename}")
     print(f"Target Notes: {target_notes}")
     
     if os.path.exists(target_wav):
-        chart_json = generate_music_game_chart(target_wav, target_notes)
+        analysis_file = target_analysis if os.path.exists(target_analysis) else None
+        chart_json = generate_music_game_chart(target_wav, target_notes, analysis_file)
         if chart_json:
             try:
                 with open(output_filename, "w", encoding='utf-8') as f:

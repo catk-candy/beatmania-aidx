@@ -1,7 +1,18 @@
 [
   {
-    "id": "song01",
-    "title": "Test Flight"
+    "id": "song01_N",
+    "title": "Test Flight (Lv4)",
+    "audio": "song01.wav"
+  },
+  {
+    "id": "song01_H",
+    "title": "Test Flight (Lv7)",
+    "audio": "song01.wav"
+  },
+  {
+    "id": "song01_A",
+    "title": "Test Flight (Lv9)",
+    "audio": "song01.wav"
   },
   {
     "id": "song02_N",
@@ -32,6 +43,11 @@
     "id": "song03_A",
     "title": "玄奏（Lv12）",
     "audio": "song03.wav"
+  },
+  {
+    "id": "song04_N",
+    "title": "プリズム（Lv6）",
+    "audio": "song04.wav"
   },
   {
     "id": "song04_H",
