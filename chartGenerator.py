@@ -434,13 +434,19 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
 
 if __name__ == "__main__":
     input_arg = "song"
-    chart_type = "normal"
-    target_notes = 800
+    difficulty_arg = "01"
+    
     if len(sys.argv) > 1: input_arg = sys.argv[1]
-    if len(sys.argv) > 2: chart_type = sys.argv[2]
-    if len(sys.argv) > 3:
-        try: target_notes = int(sys.argv[3])
-        except: pass
+    if len(sys.argv) > 2: difficulty_arg = sys.argv[2]
+
+    try:
+        level = int(difficulty_arg)
+        level = max(1, min(12, level))
+    except ValueError:
+        level = 1
+        
+    target_notes = level * 100
+    chart_type = f"{level:02d}"
 
     if input_arg == "target":
         base_name = "target"
@@ -458,7 +464,7 @@ if __name__ == "__main__":
     output_filename = f"{base_name}_{chart_type}.chart.json"
     
     print(f"Target: {target_wav} -> {output_filename}")
-    print(f"Target Notes: {target_notes}")
+    print(f"Difficulty: {level} (Target Notes: {target_notes})")
     
     if os.path.exists(target_wav):
         analysis_file = target_analysis if os.path.exists(target_analysis) else None
