@@ -1,12 +1,12 @@
 [
   {
-    "id": "song01_04",
-    "title": "Test Flight (Lv4)",
+    "id": "song01_03",
+    "title": "Test Flight (Lv3)",
     "audio": "song01.wav"
   },
   {
-    "id": "song01_07",
-    "title": "Test Flight (Lv7)",
+    "id": "song01_06",
+    "title": "Test Flight (Lv6)",
     "audio": "song01.wav"
   },
   {
@@ -15,28 +15,43 @@
     "audio": "song01.wav"
   },
   {
+    "id": "song01_12",
+    "title": "Test Flight (Lv12)",
+    "audio": "song01.wav"
+  },
+  {
+    "id": "song02_03",
+    "title": "Auto Mania（Lv3）",
+    "audio": "song02.wav"
+  },
+  {
     "id": "song02_06",
     "title": "Auto Mania（Lv6）",
     "audio": "song02.wav"
   },
   {
-    "id": "song02_08",
-    "title": "Auto Mania（Lv8）",
+    "id": "song02_09",
+    "title": "Auto Mania（Lv9）",
     "audio": "song02.wav"
   },
   {
-    "id": "song02_10",
-    "title": "Auto Mania（Lv10）",
+    "id": "song02_12",
+    "title": "Auto Mania（Lv12）",
     "audio": "song02.wav"
   },
   {
-    "id": "song03_05",
-    "title": "玄奏（Lv5）",
+    "id": "song03_03",
+    "title": "玄奏（Lv3）",
     "audio": "song03.wav"
   },
   {
-    "id": "song03_10",
-    "title": "玄奏（Lv10）",
+    "id": "song03_06",
+    "title": "玄奏（Lv6）",
+    "audio": "song03.wav"
+  },
+  {
+    "id": "song03_09",
+    "title": "玄奏（Lv9）",
     "audio": "song03.wav"
   },
   {
@@ -45,18 +60,23 @@
     "audio": "song03.wav"
   },
   {
+    "id": "song04_03",
+    "title": "プリズム（Lv3）",
+    "audio": "song04.wav"
+  },
+  {
     "id": "song04_06",
     "title": "プリズム（Lv6）",
     "audio": "song04.wav"
   },
   {
-    "id": "song04_08",
-    "title": "プリズム（Lv8）",
+    "id": "song04_09",
+    "title": "プリズム（Lv9）",
     "audio": "song04.wav"
   },
   {
-    "id": "song04_10",
-    "title": "プリズム（Lv10）",
+    "id": "song04_12",
+    "title": "プリズム（Lv12）",
     "audio": "song04.wav"
   }
 ]
