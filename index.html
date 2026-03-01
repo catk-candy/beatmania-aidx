@@ -7,18 +7,20 @@
   <link rel="icon" href="data:," />
   <title>8-Lane Rhythm Game (JSON + WAV)</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800;900&display=swap');
+
     :root {
-      --bg: #0b0f18;
-      --panel: #121a2a;
-      --text: #e9eefc;
-      --muted: #9db0d8;
-      --line: rgba(255, 255, 255, .07);
-      --card: rgba(255, 255, 255, .04);
+      --bg: #1a1a2e;
+      --panel: #262a45;
+      --text: #f0f0f0;
+      --muted: #a3a6c2;
+      --line: rgba(255, 255, 255, .1);
+      --card: rgba(255, 255, 255, .08);
     }
 
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+      font-family: 'Nunito', system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
     }
@@ -34,17 +36,18 @@
 
     .gameCard {
       background: var(--panel);
-      border-radius: 16px;
-      padding: 12px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, .25);
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, .4);
     }
 
     canvas {
       width: 100%;
       height: auto;
       display: block;
-      background: #070b12;
-      border-radius: 12px;
+      background: #0f1224;
+      border-radius: 16px;
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
     }
 
     .side {
@@ -61,20 +64,31 @@
     }
 
     button {
-      background: #2a3a5f;
-      color: var(--text);
+      background: linear-gradient(135deg, #ff4757, #ff6b81);
+      color: #fff;
       border: none;
-      padding: 10px 12px;
-      border-radius: 12px;
+      padding: 10px 16px;
+      border-radius: 999px;
       cursor: pointer;
-      font-weight: 700;
+      font-weight: 800;
+      box-shadow: 0 4px 15px rgba(255, 71, 87, 0.4);
+      transition: transform 0.1s, box-shadow 0.1s;
     }
 
     button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(255, 71, 87, 0.5);
       filter: brightness(1.1);
     }
 
+    button:active {
+      transform: translateY(1px);
+    }
+
     button:disabled {
+      background: #4a4d6b;
+      box-shadow: none;
+      transform: none;
       opacity: .5;
       cursor: not-allowed;
     }
@@ -237,8 +251,8 @@
       const JUDGE = { perfect: 40, great: 80, good: 130, miss: 180 };
 
       const HIT_Y_NORM = 0.82;
-      const NOTE_H = 14;
-      const NOTE_W_MARGIN = 8;
+      const NOTE_H = 18;
+      const NOTE_W_MARGIN = 6;
 
       let approachMs = 500;
       let approachSec = approachMs / 1000;
@@ -259,9 +273,9 @@
       setApproachMs(approachMs);
 
       const noteColorByLane = (lane) => {
-        if (lane === 0) return "#ff3b3b"; // Shift
-        if (lane === 2 || lane === 4 || lane === 6) return "#3b82f6"; // S/D/F
-        return "#e8f0ff"; // Z/X/C/V
+        if (lane === 0) return "#ff4757"; // Shift (Red)
+        if (lane === 2 || lane === 4 || lane === 6) return "#ffa502"; // S/D/F (Orange)
+        return "#ffffff"; // Z/X/C/V (White)
       };
 
       // ===== State =====
@@ -296,6 +310,7 @@
 
       let score = 0, combo = 0, maxCombo = 0;
       let pCnt = 0, gCnt = 0, gdCnt = 0, mCnt = 0;
+      let hitEffects = [];
 
       // Audio
       let audioCtx = null;
@@ -314,9 +329,6 @@
 
       let judgePopup = null;
       const POPUP_SEC = 0.35;
-
-      let laneHud = null;
-      const LANE_HUD_SEC = 0.35;
 
       // ===== Ready countdown =====
       const READY_SEC = 3.0;
@@ -442,9 +454,7 @@
         judgePopup = { text, untilSec: tSec + POPUP_SEC };
       };
 
-      const showLaneHud = (lane, text, tSec) => {
-        laneHud = { lane, text, untilSec: tSec + LANE_HUD_SEC };
-      };
+
 
       const judgeHit = (deltaMs) => {
         const ad = Math.abs(deltaMs);
@@ -528,7 +538,14 @@
 
         addScore(result);
         showJudgePopup(result, t);
-        showLaneHud(lane, `${result}  x${combo}`, t);
+
+        hitEffects.push({
+          lane: lane,
+          color: noteColorByLane(lane),
+          birth: performance.now(),
+          life: 400, // ms
+          text: `${result} x${combo}`
+        });
       });
 
       // ===== Render =====
@@ -604,7 +621,9 @@
           const nw = laneW - NOTE_W_MARGIN * 2;
 
           ctx.fillStyle = noteColorByLane(n.lane);
-          ctx.fillRect(x0, y - NOTE_H / 2, nw, NOTE_H);
+          ctx.beginPath();
+          ctx.roundRect(x0, y - NOTE_H / 2, nw, NOTE_H, 8);
+          ctx.fill();
         }
 
         // time HUD
@@ -641,17 +660,38 @@
           judgePopup = null;
         }
 
-        // lane HUD
-        if (laneHud && t <= laneHud.untilSec) {
-          const cx = laneHud.lane * laneW + laneW / 2;
-          ctx.fillStyle = "#e9eefc";
-          ctx.font = "18px system-ui";
+        // ===== POP Particles =====
+        const nowPerf = performance.now();
+        hitEffects = hitEffects.filter(ef => {
+          const elapsed = nowPerf - ef.birth;
+          if (elapsed >= ef.life) return false;
+
+          const progress = elapsed / ef.life;
+          const cx = ef.lane * laneW + laneW / 2;
+          const cy = hitY;
+
+          // Expanding line circle
+          const radius = 20 + progress * 50;
+          const alpha = Math.max(0, 1 - Math.pow(progress, 2));
+
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = ef.color;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Text float
+          ctx.fillStyle = ef.color;
+          ctx.font = "900 24px 'Nunito', system-ui";
           ctx.textAlign = "center";
-          ctx.fillText(laneHud.text, cx, hitY - 60);
-          ctx.textAlign = "left";
-        } else {
-          laneHud = null;
-        }
+          ctx.fillText(ef.text, cx, cy - 30 - progress * 40);
+
+          ctx.restore();
+
+          return true;
+        });
 
         // ===== READY overlay (3 sec) =====
         if (isReadyActive()) {
@@ -727,6 +767,7 @@
         audioBuffer = null;
         baseNotes = [];
         notes = [];
+        hitEffects = [];
         stopAudio();
         pausedAt = 0;
         setControlButtons(false);
