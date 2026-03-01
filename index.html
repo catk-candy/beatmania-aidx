@@ -880,54 +880,106 @@
       const renderSongList = (songs) => {
         songListEl.innerHTML = "";
 
+        // Group by base title (remove "(LvX)" or "（LvX）")
+        const groups = {};
         songs.forEach(song => {
-          const item = document.createElement("div");
-          item.className = "songItem";
+          const title = song.title ?? song.id;
+          const match = title.match(/^(.*?)\s*[(（]Lv\d+[)）]?$/);
+          const baseName = match ? match[1].trim() : title;
+          if (!groups[baseName]) groups[baseName] = [];
+          groups[baseName].push(song);
+        });
 
-          const left = document.createElement("div");
-          left.innerHTML = `
-            <div class="songTitle">${song.title ?? song.id}</div>
+        let activeLevelsContainer = null;
+
+        Object.keys(groups).forEach(baseName => {
+          const groupSongs = groups[baseName];
+
+          const groupWrap = document.createElement("div");
+          groupWrap.style.marginBottom = "8px";
+
+          const header = document.createElement("div");
+          header.className = "songItem";
+          header.style.cursor = "pointer";
+          header.innerHTML = `
+            <div class="songTitle" style="font-size: 15px;">${baseName}</div>
+            <div class="muted" style="font-size: 10px;">▼</div>
           `;
 
-          const btns = document.createElement("div");
-          btns.className = "songBtns";
+          const levelsContainer = document.createElement("div");
+          levelsContainer.style.display = "none";
+          levelsContainer.style.flexDirection = "column";
+          levelsContainer.style.gap = "6px";
+          levelsContainer.style.marginTop = "6px";
+          levelsContainer.style.paddingLeft = "12px";
+          levelsContainer.style.borderLeft = "2px solid var(--line)";
+          levelsContainer.style.marginLeft = "6px";
 
-          const bReg = document.createElement("button");
-          bReg.className = "miniBtn";
-          bReg.textContent = "Regular";
-
-          const bRnd = document.createElement("button");
-          bRnd.className = "miniBtn";
-          bRnd.textContent = "Random";
-
-          const disableRow = (disabled) => {
-            bReg.disabled = disabled;
-            bRnd.disabled = disabled;
-          };
-
-          const handle = async (mode) => {
-            try {
-              disableRow(true);
-              await loadSongAssets(song);
-              await startPlayWithReady(mode);
-            } catch (e) {
-              console.error(e);
-              songInfo.textContent = `Load failed: ${e.message}`;
-              hardResetSongState();
-            } finally {
-              disableRow(false);
+          header.addEventListener("click", () => {
+            const isHidden = levelsContainer.style.display === "none";
+            if (activeLevelsContainer && activeLevelsContainer !== levelsContainer) {
+              activeLevelsContainer.style.display = "none";
             }
-          };
+            levelsContainer.style.display = isHidden ? "flex" : "none";
+            activeLevelsContainer = isHidden ? levelsContainer : null;
+          });
 
-          bReg.addEventListener("click", () => handle("Regular"));
-          bRnd.addEventListener("click", () => handle("Random"));
+          groupSongs.forEach(song => {
+            const title = song.title ?? song.id;
+            const match = title.match(/[[(（](Lv\d+)[)）\]]$/);
+            const levelStr = match ? match[1] : title;
 
-          btns.appendChild(bReg);
-          btns.appendChild(bRnd);
+            const item = document.createElement("div");
+            item.className = "songItem";
+            item.style.padding = "8px 12px";
 
-          item.appendChild(left);
-          item.appendChild(btns);
-          songListEl.appendChild(item);
+            const left = document.createElement("div");
+            left.innerHTML = `<div class="songTitle" style="font-size: 13px;">${levelStr}</div>`;
+
+            const btns = document.createElement("div");
+            btns.className = "songBtns";
+
+            const bReg = document.createElement("button");
+            bReg.className = "miniBtn";
+            bReg.textContent = "Regular";
+
+            const bRnd = document.createElement("button");
+            bRnd.className = "miniBtn";
+            bRnd.textContent = "Random";
+
+            const disableRow = (disabled) => {
+              bReg.disabled = disabled;
+              bRnd.disabled = disabled;
+            };
+
+            const handle = async (mode) => {
+              try {
+                disableRow(true);
+                await loadSongAssets(song);
+                await startPlayWithReady(mode);
+              } catch (e) {
+                console.error(e);
+                songInfo.textContent = `Load failed: ${e.message}`;
+                hardResetSongState();
+              } finally {
+                disableRow(false);
+              }
+            };
+
+            bReg.addEventListener("click", () => handle("Regular"));
+            bRnd.addEventListener("click", () => handle("Random"));
+
+            btns.appendChild(bReg);
+            btns.appendChild(bRnd);
+
+            item.appendChild(left);
+            item.appendChild(btns);
+            levelsContainer.appendChild(item);
+          });
+
+          groupWrap.appendChild(header);
+          groupWrap.appendChild(levelsContainer);
+          songListEl.appendChild(groupWrap);
         });
       };
 
