@@ -92,7 +92,7 @@ def get_band_onset_strengths(y, sr):
         
     return normalize(onset_l), normalize(onset_m), normalize(onset_h)
 
-def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None):
+def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None, level=1):
     print(f"Loading {audio_path}...")
     try:
         y, sr = librosa.load(audio_path, sr=None)
@@ -227,7 +227,6 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
         
         # 曲が静か（全体オンセットが弱い）で、メロディかパーカッションが際立っている場合は、そのリズムを特別に強くする
         is_quiet = env_val < 0.3
-        
         if is_quiet and (melody_val > 0.4 or perc_val > 0.4):
             # メロディかパーカッション、強い方のリズムに合わせる
             dominant_val = max(melody_val, perc_val)
@@ -236,7 +235,13 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
             # メロディのリズムとパーカッシブなリズムの両方をベースにスコアを算出
             score = melody_val * 1.5 + perc_val * 1.5 + env_val * 0.5
             
-        if sec == 'drop': score *= 8.0               # 盛り上がる箇所はノーツを大幅に増やす
+        progress = (beat / total_beats_float) if total_beats_float > 0 else 0
+        
+        # 低難易度（Lv 1-5）の場合の特別処理
+        is_low_level = (level <= 5)
+            
+        if sec == 'drop': 
+            score *= 4.0 if is_low_level else 8.0    # 盛り上がる箇所 (低難易度は倍率を抑える)
         elif sec == 'outro': score *= 0.05           # アウトロはノーツを極限まで減らす
         elif sec == 'break': score *= 0.1            # 落ち着いた箇所もノーツをかなり減らす
         elif sec == 'intro': score *= 0.3            # イントロは少なめ
@@ -245,6 +250,13 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
         
         # 拍の頭に近い場合は少しスコアを上げる
         if abs((beat % 1.0) - round(beat % 1.0)) < 0.1: score *= 1.2
+        
+        # [NEW] アンチスパイク (ラス殺し防止) ロジック：Lv 1-5 のみ適用
+        # 曲の後半 (70%以降) で徐々にノーツ採用スコアにペナルティをかける
+        if is_low_level and progress > 0.7:
+            # 0.7 〜 1.0 の間で、ペナルティ倍率を 1.0 から 0.4 に下げる (最大 60% 減)
+            penalty_multiplier = max(0.4, 1.0 - (progress - 0.7) * 1.5)
+            score *= penalty_multiplier
         
         grid_features.append({'beat': beat, 't': t, 'l': l_val, 'm': m_val, 'h': h_val, 'melody': melody_val, 'perc': perc_val, 'sec': sec})
         grid_scores.append(score)
@@ -468,7 +480,7 @@ if __name__ == "__main__":
     
     if os.path.exists(target_wav):
         analysis_file = target_analysis if os.path.exists(target_analysis) else None
-        chart_json = generate_music_game_chart(target_wav, target_notes, analysis_file)
+        chart_json = generate_music_game_chart(target_wav, target_notes, analysis_file, level)
         if chart_json:
             try:
                 with open(output_filename, "w", encoding='utf-8') as f:
