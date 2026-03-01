@@ -604,8 +604,8 @@
       window.addEventListener("mousemove", (e) => {
         if (!canJudgeNow()) return;
 
-        const SCRATCH_THRESHOLD = 30; // pixels to trigger
-        const SCRATCH_COOLDOWN = 60;  // ms between triggers
+        const SCRATCH_THRESHOLD = 12; // pixels to trigger (increased sensitivity)
+        const SCRATCH_COOLDOWN = 50;  // ms between triggers
 
         scratchAccum += e.movementX;
 
@@ -892,6 +892,8 @@
         baseNotes = [];
         notes = [];
         hitEffects = [];
+        laneFlashUntil.fill(0);
+        judgePopup = null;
         isResultScreen = false;
         stopAudio();
         pausedAt = 0;
