@@ -547,15 +547,7 @@
         return idx >= 0 ? idx : null;
       };
 
-      window.addEventListener("keydown", (e) => {
-        if (e.code === "Digit1") { e.preventDefault(); setApproachMs(approachMs - SPEED_STEP_MS); return; }
-        if (e.code === "Digit2") { e.preventDefault(); setApproachMs(approachMs + SPEED_STEP_MS); return; }
-
-        if (!canJudgeNow()) return;
-
-        const lane = keyToLane(e.code);
-        if (lane === null) return;
-
+      const processLaneHit = (lane) => {
         const t = nowSongSec();
         triggerLaneFlash(lane, t);
 
@@ -592,6 +584,39 @@
           life: 400, // ms
           text: `${result} x${combo}`
         });
+      };
+
+      window.addEventListener("keydown", (e) => {
+        if (e.code === "Digit1") { e.preventDefault(); setApproachMs(approachMs - SPEED_STEP_MS); return; }
+        if (e.code === "Digit2") { e.preventDefault(); setApproachMs(approachMs + SPEED_STEP_MS); return; }
+
+        if (!canJudgeNow()) return;
+
+        const lane = keyToLane(e.code);
+        if (lane === null) return;
+
+        processLaneHit(lane);
+      });
+
+      let scratchAccum = 0;
+      let lastScratchTime = performance.now();
+
+      window.addEventListener("mousemove", (e) => {
+        if (!canJudgeNow()) return;
+
+        const SCRATCH_THRESHOLD = 30; // pixels to trigger
+        const SCRATCH_COOLDOWN = 60;  // ms between triggers
+
+        scratchAccum += e.movementX;
+
+        if (Math.abs(scratchAccum) >= SCRATCH_THRESHOLD) {
+          const now = performance.now();
+          if (now - lastScratchTime >= SCRATCH_COOLDOWN) {
+            processLaneHit(0); // target red lane
+            scratchAccum = 0;
+            lastScratchTime = now;
+          }
+        }
       });
 
       // ===== Render =====
