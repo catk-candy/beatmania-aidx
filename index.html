@@ -312,6 +312,11 @@
       let pCnt = 0, gCnt = 0, gdCnt = 0, mCnt = 0;
       let hitEffects = [];
 
+      // Result Screen state
+      let isResultScreen = false;
+      let finalRateText = "";
+      let finalRateColor = "";
+
       // Audio
       let audioCtx = null;
       let audioBuffer = null;
@@ -371,6 +376,7 @@
 
       const stopAudio = () => {
         if (audioSource) {
+          audioSource.onended = null; // Prevent triggering result screen on manual stop
           try { audioSource.stop(); } catch (e) { }
           try { audioSource.disconnect(); } catch (e) { }
           audioSource = null;
@@ -389,8 +395,48 @@
 
         audioStartAt = audioCtx.currentTime;
         pausedAt = fromSec;
+        audioSource.onended = handleSongEnd;
         audioSource.start(0, fromSec);
         isPlaying = true;
+      };
+
+      const handleSongEnd = () => {
+        const maxScore = baseNotes.length * 1000;
+        const ratio = maxScore > 0 ? score / maxScore : 0;
+
+        let grade = "F";
+        let color = "#a3a6c2"; // Gray
+
+        if (ratio >= 8 / 9) {
+          grade = "AAA";
+          color = "#ffd700"; // Gold
+        } else if (ratio >= 7 / 9) {
+          grade = "AA";
+          color = "#e0e0e0"; // Silver
+        } else if (ratio >= 6 / 9) {
+          grade = "A";
+          color = "#ff7e67"; // Soft Orange
+        } else if (ratio >= 5 / 9) {
+          grade = "B";
+          color = "#5ee57a"; // Soft Green
+        } else if (ratio >= 4 / 9) {
+          grade = "C";
+          color = "#40c4ff"; // Soft Blue
+        } else if (ratio >= 3 / 9) {
+          grade = "D";
+          color = "#ab47bc"; // Soft Purple
+        } else if (ratio >= 2 / 9) {
+          grade = "E";
+          color = "#ff5252"; // Soft Red
+        }
+
+        finalRateText = grade;
+        finalRateColor = color;
+        isResultScreen = true;
+
+        songInfo.textContent = `Finished: ${currentSong?.title ?? ""} - Grade: ${grade}`;
+        setControlButtons(false);
+        btnRestart.disabled = false; // Allow restarting even after finish
       };
 
       const pauseAudio = () => {
@@ -554,15 +600,25 @@
         ctx.clearRect(0, 0, w, h);
 
         const lanes = 8;
-        const laneW = w / lanes;
+        const W = w / 7.4; // 5 wide lanes + 3 narrow lanes (3 * 0.8 = 2.4 => total 7.4)
+        const laneGeom = [];
+        let currX = 0;
+        for (let i = 0; i < lanes; i++) {
+          const isNarrow = (i === 2 || i === 4 || i === 6);
+          const lw = isNarrow ? (W * 0.8) : W;
+          laneGeom.push({ x: currX, w: lw });
+          currX += lw;
+        }
+
         const hitY = h * HIT_Y_NORM;
 
         // lanes bg
         for (let i = 0; i < lanes; i++) {
+          const geom = laneGeom[i];
           ctx.fillStyle = (i % 2 === 0) ? "#0f1726" : "#0c1320";
-          ctx.fillRect(i * laneW, 0, laneW, h);
+          ctx.fillRect(geom.x, 0, geom.w, h);
           ctx.strokeStyle = "#22314f";
-          ctx.strokeRect(i * laneW, 0, laneW, h);
+          ctx.strokeRect(geom.x, 0, geom.w, h);
         }
 
         // hit bar
@@ -572,9 +628,12 @@
         // key labels
         ctx.font = "14px system-ui";
         ctx.fillStyle = "#9db0d8";
+        ctx.textAlign = "center";
         for (let i = 0; i < lanes; i++) {
-          ctx.fillText(KEY_ORDER[i].label, i * laneW + 10, hitY + 28);
+          const geom = laneGeom[i];
+          ctx.fillText(KEY_ORDER[i].label, geom.x + geom.w / 2, hitY + 28);
         }
+        ctx.textAlign = "left";
 
         ctx.fillStyle = "#9db0d8";
         ctx.font = "14px system-ui";
@@ -582,14 +641,51 @@
 
         if (!chartLoaded) {
           ctx.fillStyle = "#e9eefc";
-          ctx.font = "24px system-ui";
+          ctx.font = "24px 'Nunito', system-ui";
           ctx.fillText("Select a song on the right", 24, 60);
 
           if (performance.now() <= speedHudUntilPerf) {
             const txt = String(approachMs).padStart(4, "0") + "ms";
-            ctx.font = "20px system-ui";
+            ctx.font = "20px 'Nunito', system-ui";
             ctx.fillText(`Speed: ${txt}`, 12, 48);
           }
+
+          requestAnimationFrame(draw);
+          return;
+        }
+
+        // ===== RESULT SCREEN =====
+        if (isResultScreen) {
+          // Dim background slightly more
+          ctx.fillStyle = "rgba(15, 18, 36, 0.85)";
+          ctx.fillRect(0, 0, w, h);
+
+          ctx.textAlign = "center";
+
+          // Header
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "800 40px 'Nunito', system-ui";
+          ctx.fillText("RESULT", w * 0.5, h * 0.25);
+
+          // Grade
+          ctx.fillStyle = finalRateColor;
+          ctx.font = "900 140px 'Nunito', system-ui";
+
+          // Add shadow for pop effect
+          ctx.shadowColor = finalRateColor;
+          ctx.shadowBlur = 30;
+          ctx.fillText(finalRateText, w * 0.5, h * 0.55);
+          ctx.shadowBlur = 0;
+
+          // Stats
+          const maxScore = baseNotes.length * 1000;
+          ctx.fillStyle = "#e9eefc";
+          ctx.font = "700 24px 'Nunito', system-ui";
+          ctx.fillText(`SCORE: ${score} / ${maxScore}`, w * 0.5, h * 0.75);
+          ctx.font = "20px 'Nunito', system-ui";
+          ctx.fillText(`MAX COMBO: ${maxCombo}`, w * 0.5, h * 0.83);
+
+          ctx.textAlign = "left";
 
           requestAnimationFrame(draw);
           return;
@@ -600,9 +696,10 @@
         // lane flash
         for (let i = 0; i < lanes; i++) {
           if (t <= laneFlashUntil[i]) {
+            const geom = laneGeom[i];
             ctx.globalAlpha = 0.25;
             ctx.fillStyle = noteColorByLane(i);
-            ctx.fillRect(i * laneW, 0, laneW, h);
+            ctx.fillRect(geom.x, 0, geom.w, h);
             ctx.globalAlpha = 1.0;
           }
         }
@@ -617,8 +714,9 @@
 
           if (y < -NOTE_H || y > hitY + 80) continue;
 
-          const x0 = n.lane * laneW + NOTE_W_MARGIN;
-          const nw = laneW - NOTE_W_MARGIN * 2;
+          const geom = laneGeom[n.lane];
+          const x0 = geom.x + NOTE_W_MARGIN;
+          const nw = geom.w - NOTE_W_MARGIN * 2;
 
           ctx.fillStyle = noteColorByLane(n.lane);
           ctx.beginPath();
@@ -667,7 +765,8 @@
           if (elapsed >= ef.life) return false;
 
           const progress = elapsed / ef.life;
-          const cx = ef.lane * laneW + laneW / 2;
+          const geom = laneGeom[ef.lane];
+          const cx = geom.x + geom.w / 2;
           const cy = hitY;
 
           // Expanding line circle
@@ -744,11 +843,11 @@
         const id = (typeof songOrId === "string") ? songOrId : songOrId.id;
         if (kind === "audio") {
           // Use explicit audio file if available, otherwise default to id.wav
-          if (typeof songOrId === "object" && songOrId.audio) return songOrId.audio;
-          return `${id}.wav`;
+          if (typeof songOrId === "object" && songOrId.audio) return `songs/${songOrId.audio}`;
+          return `songs/${id}.wav`;
         }
-        if (kind === "chart") return `${id}.chart.json`;
-        if (kind === "analysis") return `${id}.analysis.json`;
+        if (kind === "chart") return `songs/${id}.chart.json`;
+        if (kind === "analysis") return `songs/${id}.analysis.json`;
         throw new Error("unknown kind");
       };
 
@@ -768,6 +867,7 @@
         baseNotes = [];
         notes = [];
         hitEffects = [];
+        isResultScreen = false;
         stopAudio();
         pausedAt = 0;
         setControlButtons(false);
@@ -986,7 +1086,7 @@
       // ===== Boot =====
       (async () => {
         try {
-          const songs = await loadJSON("songs.json");
+          const songs = await loadJSON("songs/songs.json");
           if (!Array.isArray(songs) || songs.length === 0) {
             songInfo.textContent = "songs.json が空です（配列で曲を定義してください）";
             return;

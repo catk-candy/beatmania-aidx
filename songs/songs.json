@@ -1,0 +1,102 @@
+[
+  {
+    "id": "FLOWER_02",
+    "title": "FLOWER (Lv2)",
+    "audio": "FLOWER.wav"
+  },
+  {
+    "id": "FLOWER_05",
+    "title": "FLOWER (Lv5)",
+    "audio": "FLOWER.wav"
+  },
+  {
+    "id": "FLOWER_08",
+    "title": "FLOWER (Lv8)",
+    "audio": "FLOWER.wav"
+  },
+  {
+    "id": "FLOWER_11",
+    "title": "FLOWER (Lv11)",
+    "audio": "FLOWER.wav"
+  },
+  {
+    "id": "ILIAS_03",
+    "title": "ILIAS (Lv3)",
+    "audio": "ILIAS.wav"
+  },
+  {
+    "id": "ILIAS_06",
+    "title": "ILIAS (Lv6)",
+    "audio": "ILIAS.wav"
+  },
+  {
+    "id": "ILIAS_09",
+    "title": "ILIAS (Lv9)",
+    "audio": "ILIAS.wav"
+  },
+  {
+    "id": "ILIAS_12",
+    "title": "ILIAS (Lv12)",
+    "audio": "ILIAS.wav"
+  },
+  {
+    "id": "Liberation_01",
+    "title": "Liberation (Lv1)",
+    "audio": "Liberation.wav"
+  },
+  {
+    "id": "Liberation_04",
+    "title": "Liberation (Lv4)",
+    "audio": "Liberation.wav"
+  },
+  {
+    "id": "Liberation_07",
+    "title": "Liberation (Lv7)",
+    "audio": "Liberation.wav"
+  },
+  {
+    "id": "Liberation_10",
+    "title": "Liberation (Lv10)",
+    "audio": "Liberation.wav"
+  },
+  {
+    "id": "Spinning_Around_02",
+    "title": "Spinning Around (Lv2)",
+    "audio": "Spinning_Around.wav"
+  },
+  {
+    "id": "Spinning_Around_04",
+    "title": "Spinning Around (Lv4)",
+    "audio": "Spinning_Around.wav"
+  },
+  {
+    "id": "Spinning_Around_09",
+    "title": "Spinning Around (Lv9)",
+    "audio": "Spinning_Around.wav"
+  },
+  {
+    "id": "Spinning_Around_11",
+    "title": "Spinning Around (Lv11)",
+    "audio": "Spinning_Around.wav"
+  },
+  {
+    "id": "ZED_03",
+    "title": "ZED (Lv3)",
+    "audio": "ZED.wav"
+  },
+  {
+    "id": "ZED_07",
+    "title": "ZED (Lv7)",
+    "audio": "ZED.wav"
+  },
+  {
+    "id": "ZED_10",
+    "title": "ZED (Lv10)",
+    "audio": "ZED.wav"
+  },
+  {
+    "id": "ZED_12",
+    "title": "ZED (Lv12)",
+    "audio": "ZED.wav"
+  }
+]
