@@ -274,10 +274,12 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
 
     # --- 5. 配置ロジック (階段抑制版) ---
     notes = []
-    max_shift_notes = min(30, target_notes_count // 25)
+    max_shift_notes = max(5, target_notes_count // 40)
     shift_count = 0
     
     last_lanes = set()
+    last_chord_beat = -999.0
+    last_scratch_beat = -999.0
     if level <= 3:
         all_keys = [1, 3, 5, 7] # 橙レーン(2,4,6)を一切出現させない
     else:
@@ -307,111 +309,217 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
                 is_structure_boundary = True
                 break
 
+        # B. 鍵盤側と共通の計算値を先に取得
+        melody_str = feat.get('melody', 0.0)
+        perc_str = feat.get('perc', 0.0)
+        is_snare_cymbal = (h_str > m_str and h_str > 0.5)
+
         # --- A. Kick (Lane 0) ---
-        is_kick_heavy = (l_str > 0.6)
         use_shift = False
         
-        if is_structure_boundary:
-            # 切り替わり地点では高い確率でShift(Lane 0)ノーツを降らせる
-            if random.random() < 0.9: 
-                use_shift = True
-        elif shift_count < max_shift_notes:
-            if is_kick_heavy and sec=='drop':
-                if random.random() < 0.7: use_shift = True
-            elif abs((beat % 4.0) - round(beat % 4.0)) < 0.1 and sec != 'break':
-                if random.random() < 0.3: use_shift = True
+        # 連皿防止の間隔設定
+        min_scratch_gap = 1.0 if level <= 6 else 0.5
+        
+        if beat - last_scratch_beat >= min_scratch_gap:
+            # 1. 構造的境界（曲の展開の切り替わり）には確実に配置
+            if is_structure_boundary:
+                if random.random() < 0.7: 
+                    use_shift = True
+            elif shift_count < max_shift_notes:
+                # 2. 極端に強いキック (l_str > 0.8) に限定する
+                is_huge_kick = (l_str > 0.82)
+                # 3. リズムに合わない異常な立ち上がり (SFX系)
+                is_sfx = (env_val > 0.8 and melody_str < 0.4 and perc_str < 0.4)
+                
+                if is_huge_kick or is_sfx:
+                    if random.random() < 0.8: use_shift = True
         
         if use_shift:
             assigned_lanes.append(0)
             shift_count += 1
+            last_scratch_beat = beat
             
         # --- B. 鍵盤 ---
-        is_snare_cymbal = (h_str > m_str and h_str > 0.5)
-        melody_str = feat.get('melody', 0.0)
-        perc_str = feat.get('perc', 0.0)
-        
         # メロディ成分とパーカッシブ成分の比較
         is_melody = (melody_str > perc_str or m_str > h_str)
         
-        # 同時押しを廃止し単音のみの評価とする
-        # --- 単音 (階段抑制ロジック) ---
-        next_lane = -1
+        # 同時押しと単音の評価 (階段抑制・縦連防止・離れた配置)
+        MAX_CHORD_SIZE = 2 if level <= 6 else 3
+        max_keys_to_pick = min(3, max(1, MAX_CHORD_SIZE - len(assigned_lanes)))
         
-        # パターン更新 (duration切れ または 新しいフレーズ感)
-        if pattern_duration <= 0:
-            r = random.random()
+        num_to_pick = 1
+        
+        # 16分音符間隔の連続同時押しを防止 (16分 = 0.25拍, 余裕を持たせて0.4未満は許可しない = 8分以上の間隔を空ける)
+        if beat - last_chord_beat < 0.4:
+            pass # keep num_to_pick = 1
+        else:
+            chord_chance = (m_str + h_str + melody_str) / 3.0
             
-            # デフォルトはランダム（乱打）
-            flow_state['type'] = 'random'
-            pattern_duration = random.randint(4, 16)
-
-            # メロディが強くても階段にする確率は低くする (0.6 -> 0.25)
-            if is_melody:
-                if r < 0.25: 
+            # 表拍子（8分音符間隔のジャストタイミング）の判定
+            # beat % 0.5 が 0.0付近であれば表拍子 (誤差0.1を許容)
+            is_on_beat = abs((beat % 0.5) - round(beat % 0.5)) < 0.1
+            
+            if is_on_beat:
+                # 表拍子への配置を促す (1.5倍)
+                chord_chance *= 1.5
+            else:
+                # 16分裏などへの配置を抑制する (0.3倍)
+                chord_chance *= 0.3
+                
+            if sec == 'drop' or chord_chance > 0.4:
+                if random.random() < 0.2 + (chord_chance * 0.3):
+                    num_to_pick = 2
+                    if max_keys_to_pick >= 3 and random.random() < 0.2:
+                        num_to_pick = 3
+        
+        num_to_pick = min(num_to_pick, max_keys_to_pick)
+        if num_to_pick > 1:
+            last_chord_beat = beat
+            
+        available_keys = [k for k in all_keys if k not in last_lanes]
+        
+        # 無理皿防止: スクラッチが降ってくる場合は右側のレーン(5,6,7)を除外
+        if use_shift:
+            available_keys = [k for k in available_keys if k < 5]
+            if not available_keys: 
+                available_keys = [k for k in all_keys if k < 5]
+                
+        if len(available_keys) < num_to_pick:
+            available_keys = all_keys.copy()
+            if use_shift: available_keys = [k for k in available_keys if k < 5]
+            
+        keys_to_add = []
+        
+        if num_to_pick == 1:
+            next_lane = -1
+            if pattern_duration <= 0:
+                r = random.random()
+                flow_state['type'] = 'random'
+                pattern_duration = random.randint(4, 16)
+                if is_melody and r < 0.25: 
                     flow_state['type'] = 'stairs'
                     flow_state['dir'] = 1 if random.random() > 0.5 else -1
-                    # 階段は短く終わらせる (max 6)
-                    pattern_duration = random.randint(3, 6)
-            
-            # トリルも低確率 (0.15)
-            elif is_snare_cymbal:
-                if r < 0.15:
+                    # 大階段を作るために長めに維持する
+                    pattern_duration = random.randint(5, 7)
+                    # 端からスタートしやすいように初期位置を調整
+                    if flow_state['dir'] == 1:
+                        flow_state['idx'] = random.randint(0, 2)
+                    else:
+                        flow_state['idx'] = random.randint(len(all_keys)-3, len(all_keys)-1)
+                        
+                elif is_snare_cymbal and r < 0.15:
                     flow_state['type'] = 'trill'
                     idx1 = random.randint(0, len(all_keys)-2)
                     flow_state['trill_pair'] = [all_keys[idx1], all_keys[idx1+1]]
                     pattern_duration = random.randint(4, 8)
 
-        # --- レーン決定 ---
-        if flow_state['type'] == 'stairs':
-            flow_state['idx'] = (flow_state['idx'] + flow_state['dir'])
-            # 折り返し
-            max_idx = len(all_keys) - 1
-            if flow_state['idx'] > max_idx - 1: 
-                flow_state['idx'] = max_idx - 1
-                flow_state['dir'] = -1
-            elif flow_state['idx'] < 0:
-                flow_state['idx'] = 1
-                flow_state['dir'] = 1
-            next_lane = all_keys[flow_state['idx']]
-            
-        elif flow_state['type'] == 'trill':
-            pair = flow_state['trill_pair']
-            if list(last_lanes) and list(last_lanes)[0] == pair[0]:
-                next_lane = pair[1]
-            else:
-                next_lane = pair[0]
-        else:
-            # --- Improved Random (Wide Spread) ---
-            # 直前のレーンと近いところばかり選ぶと「偶発的階段」になるので
-            # 離れたレーンを選びやすくする重み付け
-            
-            weights = []
-            last_l = list(last_lanes)[0] if last_lanes else 4
-            
-            for k in all_keys:
-                if k in last_lanes:
-                    weights.append(0) # 縦連禁止
+            if flow_state['type'] == 'stairs':
+                flow_state['idx'] = (flow_state['idx'] + flow_state['dir'])
+                max_idx = len(all_keys) - 1
+                if flow_state['idx'] > max_idx: 
+                    flow_state['idx'] = max_idx - 1
+                    flow_state['dir'] = -1
+                elif flow_state['idx'] < 0:
+                    flow_state['idx'] = 1
+                    flow_state['dir'] = 1
+                next_lane = all_keys[flow_state['idx']]
+            elif flow_state['type'] == 'trill':
+                pair = flow_state['trill_pair']
+                if list(last_lanes) and list(last_lanes)[0] == pair[0]:
+                    next_lane = pair[1]
                 else:
-                    dist = abs(k - last_l)
-                    # 距離が遠いほど重みを大きく (距離1=1, 距離6=6)
-                    # ただし極端になりすぎないように +1
-                    weights.append(dist + 1)
-            
-            # 重みに基づいて選択
-            total_w = sum(weights)
-            if total_w > 0:
-                probs = [w/total_w for w in weights]
-                next_lane = np.random.choice(all_keys, p=probs)
+                    next_lane = pair[0]
             else:
-                next_lane = random.choice([k for k in all_keys if k not in last_lanes])
-            
-            flow_state['idx'] = all_keys.index(next_lane)
+                # --- IIDX Pitch-based Lane Mapping ---
+                weights = []
+                last_l = list(last_lanes)[0] if last_lanes else all_keys[len(all_keys)//2]
+                
+                # 低音が強い場合は左(1,2,3)、高音が強い場合は右(5,6,7)に重み付け
+                left_bias = (l_str > h_str + 0.1)
+                right_bias = (h_str > l_str + 0.1)
+                
+                for k in all_keys:
+                    if k in last_lanes:
+                        weights.append(0)
+                    else:
+                        # 物理的距離による基本分散
+                        base_w = abs(k - last_l) + 1
+                        
+                        # ピッチバイアスの乗算
+                        if left_bias and k <= 3: base_w *= 3.0
+                        elif right_bias and k >= 5: base_w *= 3.0
+                        
+                        weights.append(base_w)
+                        
+                total_w = sum(weights)
+                if total_w > 0:
+                    probs = [w/total_w for w in weights]
+                    next_lane = np.random.choice(all_keys, p=probs)
+                else:
+                    next_lane = random.choice(available_keys)
+                flow_state['idx'] = all_keys.index(next_lane)
 
-        # 念のための縦連防止
-        while next_lane in last_lanes:
-            next_lane = random.choice(all_keys)
+            safe_keys_single = [k for k in all_keys if k not in last_lanes]
+            if not safe_keys_single: safe_keys_single = all_keys
+            while next_lane in last_lanes:
+                next_lane = random.choice(safe_keys_single)
+            keys_to_add = [next_lane]
+
+        else:
+            # --- IIDX Aesthetic Chords ---
+            left_bias = (l_str > h_str + 0.1)
+            right_bias = (h_str > l_str + 0.1)
             
-        keys_to_add = [next_lane]
+            valid_chords = []
+            if num_to_pick == 2:
+                shapes2 = [
+                    [1,3], [3,5], [5,7], # White-White
+                    [2,4], [4,6],        # Black-Black
+                    [1,4], [2,5], [3,6], [4,7], # Keima
+                    [1,5], [2,6], [3,7], [1,6], [2,7], [1,7] # Wide
+                ]
+                # Filter out shapes that use keys not in all_keys (for Level 1-3)
+                shapes2 = [s for s in shapes2 if all(k in all_keys for k in s)]
+                
+                for s in shapes2:
+                    # Strict anti-vertical repetition
+                    if not any(k in last_lanes for k in s):
+                        valid_chords.append(s)
+            
+            elif num_to_pick == 3:
+                shapes3 = [
+                    [1,3,5], [2,4,6], [3,5,7], # Triads
+                    [1,4,7], [1,5,7], [1,3,7]  # Wide Triads
+                ]
+                shapes3 = [s for s in shapes3 if all(k in all_keys for k in s)]
+                for s in shapes3:
+                    if not any(k in last_lanes for k in s):
+                        valid_chords.append(s)
+
+            if valid_chords:
+                # Apply Pitch Bias
+                weights = []
+                for s in valid_chords:
+                    w = 1.0
+                    if left_bias:
+                        if 1 in s or 2 in s: w *= 3.0
+                    elif right_bias:
+                        if 6 in s or 7 in s: w *= 3.0
+                    weights.append(w)
+                
+                total_w = sum(weights)
+                probs = [w/total_w for w in weights]
+                idx = np.random.choice(len(valid_chords), p=probs)
+                keys_to_add = valid_chords[idx]
+            else:
+                # Fallback to single note if no valid chords to prevent jack spams
+                safe_keys = [k for k in all_keys if k not in last_lanes]
+                if not safe_keys: safe_keys = all_keys
+                keys_to_add = [random.choice(safe_keys)]
+                
+            flow_state['type'] = 'random'
+            flow_state['idx'] = all_keys.index(keys_to_add[0])
+            pattern_duration = 0
 
         assigned_lanes.extend(keys_to_add)
         
