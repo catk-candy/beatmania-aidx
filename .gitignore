@@ -208,3 +208,4 @@ __marimo__/
 
 # Custom ignores
 *.wav
+.DS_Store

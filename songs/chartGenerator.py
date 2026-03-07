@@ -266,10 +266,59 @@ def generate_music_game_chart(audio_path, target_notes_count, analysis_file=None
     
     num_select = min(len(all_grids), target_notes_count)
     
-    # スコアが高いものから順番に TOP-N 個を取得
-    top_indices = np.argsort(grid_scores)[::-1][:num_select]
-    
-    selected_indices = sorted(top_indices)
+    if level <= 3:
+        # Lv1~3はノーツ数が少なく偏大しやすいため、小節(4拍)ごとにノーツを配分する(D'Hondt法)
+        bar_grids = {}
+        for i, grid_info in enumerate(all_grids):
+            bar_idx = int(grid_info['beat'] // 4.0)
+            if bar_idx not in bar_grids:
+                bar_grids[bar_idx] = []
+            bar_grids[bar_idx].append(i)
+            
+        bar_weights = {}
+        max_allocs = {}
+        for b, indices in bar_grids.items():
+            max_s = max([grid_scores[i] for i in indices])
+            # 平方根で重みをマイルドにし、極端な偏りを防ぐ (少しだけ加算してゼロを回避)
+            bar_weights[b] = (max_s + 0.01) ** 0.5 
+            max_allocs[b] = len(indices)
+            
+        allocations = {b: 0 for b in bar_grids.keys()}
+        remaining_notes = num_select
+        
+        while remaining_notes > 0:
+            available_bars = [b for b in bar_grids.keys() if allocations[b] < max_allocs[b]]
+            if not available_bars:
+                break
+                
+            best_bar = None
+            max_value = -1.0
+            
+            for b in available_bars:
+                val = bar_weights[b] / (allocations[b] + 1.0)
+                if val > max_value:
+                    max_value = val
+                    best_bar = b
+                    
+            if best_bar is not None:
+                allocations[best_bar] += 1
+                remaining_notes -= 1
+            else:
+                break
+                
+        selected_indices_list = []
+        for b, alloc in allocations.items():
+            if alloc > 0:
+                indices = bar_grids[b]
+                indices_sorted = sorted(indices, key=lambda i: grid_scores[i], reverse=True)
+                selected_indices_list.extend(indices_sorted[:alloc])
+                
+        selected_indices = sorted(selected_indices_list)
+    else:
+        # 従来通りスコアが高いものから順番に TOP-N 個を取得
+        top_indices = np.argsort(grid_scores)[::-1][:num_select]
+        selected_indices = sorted(top_indices)
+
     print(f"Generating notes for {len(selected_indices)} beats...")
 
     # --- 5. 配置ロジック (階段抑制版) ---
